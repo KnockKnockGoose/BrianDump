@@ -1,0 +1,5 @@
+# Tests and lint: py -m pip install -r requirements-dev.txt   (the page test also needs: py -m playwright install chromium)
+pytest
+ruff==0.17.1          # pinned: CI lints with this exact version
+jsonschema
+playwright

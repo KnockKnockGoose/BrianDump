@@ -1,0 +1,86 @@
+# BrianDump: packaging metadata plus the ruff and pytest configuration.
+# The tool runs from a checkout (`py briandump.py ...`); it is not on PyPI. The [project] table gives the metadata one home.
+# An editable install (`py -m pip install -e .[voice]`) works because it runs from the checkout. A plain wheel would leave
+# config.example.json, briandump.py and plugin/ behind (they sit next to the package, not in it), so 0.1 does not offer one.
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "briandump"
+dynamic = ["version"]                 # briandump/__init__.py: __version__ = "0.1.1"
+description = "A side panel and a push-to-talk key for Claude Code on Windows."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Brian Mahoney" }]
+keywords = ["claude-code", "voice", "push-to-talk", "whisper", "windows", "brain-dump"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Win32 (MS Windows)",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Utilities",
+]
+# The panel itself needs nothing beyond the standard library.
+dependencies = []
+
+[project.optional-dependencies]
+# The talk key and the dumps. Mirrors requirements.txt (the installer uses that file): change both together.
+voice = [
+  "faster-whisper>=1.1",
+  "sounddevice",
+  "pynput",
+  "numpy",
+  "pycaw; sys_platform == 'win32'",
+  "comtypes; sys_platform == 'win32'",
+]
+# The optional frameless WebView2 window (`"window": "webview"`).
+webview = ["pywebview", "pythonnet"]
+# Mirrors requirements-dev.txt. The page test also needs `py -m playwright install chromium`.
+dev = ["pytest", "ruff==0.17.1", "jsonschema", "playwright"]
+
+[project.urls]
+Homepage = "https://github.com/KnockKnockGoose/BrianDump"
+Issues = "https://github.com/KnockKnockGoose/BrianDump/issues"
+Changelog = "https://github.com/KnockKnockGoose/BrianDump/blob/main/CHANGELOG.md"
+
+[project.scripts]
+briandump = "briandump.cli:main"
+
+[tool.setuptools]
+packages = ["briandump"]
+
+[tool.setuptools.dynamic]
+version = { attr = "briandump.__version__" }
+
+[tool.setuptools.package-data]
+briandump = ["panel.html", "panel.ico", "cards.schema.json", "fixtures/*", "*.pyw"]
+
+# ---------------------------------------------------------------- ruff
+[tool.ruff]
+line-length = 140
+target-version = "py311"
+extend-include = ["*.pyw"]            # ptt_service.pyw, watchdog.pyw are Python too
+extend-exclude = ["qa", "docs"]       # the local QA harness and the docs are not shipped code
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"briandump.py" = ["E402"]               # the shim puts the repo on sys.path before importing briandump
+
+[tool.ruff.lint.isort]
+known-first-party = ["briandump"]
+
+# ---------------------------------------------------------------- pytest
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]                    # `pytest tests` finds `briandump` without an install
+markers = [
+  "slow: takes more than a few seconds (model loads, subprocesses); deselect with -m 'not slow'",
+  "win32: needs Windows (console, window or hotkey APIs); CI runs it on Windows only (-m 'not win32' elsewhere)",
+]

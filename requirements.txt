@@ -1,0 +1,7 @@
+# The panel server needs none of these (plain standard library); they are for hold-to-talk, brain dumps and the mic list.
+faster-whisper>=1.1
+sounddevice
+pynput
+numpy
+pycaw; sys_platform == "win32"
+comtypes; sys_platform == "win32"

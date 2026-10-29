@@ -1,0 +1,37 @@
+# BrianDump: nothing personal, nothing generated
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.vscode/
+.idea/
+
+# runtime state and user data never live in the repo (they live under %LOCALAPPDATA%\BrianDump and ~\Documents\BrianDump)
+inbox/
+logs/
+state/
+dumps/
+reports/
+*.wav
+*.m4a
+*.mp3
+*.jsonl
+*.log
+*.tmp
+# (root-anchored: plugin/commands/agenda.md is a real file and must ship)
+/config.json
+needs_you*.json
+/agenda.md
+/questions.md
+.edge-profile/
+edge-profile/
+webview/
+
+# the local QA harness (sandbox + Playwright) and the internal QA and build reports stay out of the public repo
+/qa/
+docs/qa/
+
+# packaging
+build/
+dist/
+*.egg-info/

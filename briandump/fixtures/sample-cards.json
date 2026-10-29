@@ -1,0 +1,83 @@
+{
+  "executiveSummary": "The user is planning a small garden shed for the space at the back of the garden, roughly three metres by two and a half, and wants the groundwork right before buying anything. They want to measure the space properly because the fence leans in at the far end, and to check the local rules on height and distance from the boundary before committing to a design. They intend to price the timber frame and the roofing, and will call the lumber yard tomorrow morning for a cut-to-length quote and delivery. The one open decision is the base: a concrete slab or compacted gravel with a timber frame on top. They also want to find out whether a flat-packed shed kit would be cheaper than building from scratch.",
+  "talkingPoints": [
+    {
+      "theme": "Measuring the space",
+      "bullets": [
+        "The back corner is roughly 3 m by 2.5 m, but it has not been measured properly yet.",
+        "The fence leans in at the far end, so the usable width may be less than it looks.",
+        "Plan: measure with the long tape and mark the corners with pegs before ordering any timber."
+      ]
+    },
+    {
+      "theme": "Local rules",
+      "bullets": [
+        "Small structures under a certain height near the boundary may not need a permit, but the exact limits are unknown.",
+        "If the shed has to sit a metre off the fence the whole design changes, so this comes before any purchase."
+      ]
+    },
+    {
+      "theme": "Timber, roofing and the base",
+      "bullets": [
+        "Price the frame properly: studs, floor joists and roof battens, ideally cut to length and delivered.",
+        "Roofing is either felt or corrugated bitumen sheets; the sheets are said to last longer but cost more.",
+        "Base undecided: a concrete slab is permanent and level but a lot of work; compacted gravel is cheaper and a weekend job but might shift.",
+        "Someone mentioned flat-packed shed kits; worth checking whether a kit of this size beats building from scratch."
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "a1",
+      "title": "Summarise the permit rules for small sheds",
+      "deliverable": "Write a short note on the usual height and boundary-distance limits for garden sheds, with a checklist of what to confirm with the local council, and save it as shed/permit-notes.md.",
+      "why": "They said the permit rules come before any design decision and they do not know the numbers.",
+      "status": "proposed",
+      "effort": "quick"
+    },
+    {
+      "id": "a2",
+      "title": "Draft a timber and roofing cutting list",
+      "deliverable": "Produce a cutting list for a 3 m by 2.5 m timber-framed shed (studs, floor joists, roof battens, sheathing) with quantities and two roofing options, felt and corrugated bitumen, and save it as shed/materials.md.",
+      "why": "They want a proper price for the whole frame before calling the lumber yard tomorrow.",
+      "status": "proposed",
+      "effort": "approval"
+    },
+    {
+      "id": "a3",
+      "title": "Compare slab, gravel and kit options",
+      "deliverable": "Write a one-page comparison of a concrete slab versus a compacted gravel base, and of building from scratch versus a flat-packed kit, with a recommendation for a weekend builder.",
+      "why": "The base is the open question, and they would rather have the weekend back if a kit is close in price.",
+      "status": "proposed",
+      "effort": "quick"
+    }
+  ],
+  "nextPrompts": [
+    {
+      "question": "What did the measurement show, and how much does the leaning fence take off the usable width?",
+      "topic": "Measuring"
+    },
+    {
+      "question": "What height and boundary limits apply where you live, and do they change the design?",
+      "topic": "Permit rules"
+    },
+    {
+      "question": "What did the lumber yard quote for the frame, and do they deliver?",
+      "topic": "Pricing"
+    },
+    {
+      "question": "Slab or gravel: which way are you leaning now, and what would settle it?",
+      "topic": "Base"
+    },
+    {
+      "question": "Is a flat-packed kit in that size actually cheaper than building from scratch?",
+      "topic": "Shed kits"
+    }
+  ],
+  "todos": [
+    "Measure the shed space with the long tape and peg the corners",
+    "Look up the local height and boundary rules for sheds",
+    "Call the lumber yard tomorrow morning for a frame quote and delivery"
+  ],
+  "project": "Garden shed"
+}

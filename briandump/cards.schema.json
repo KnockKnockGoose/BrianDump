@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/KnockKnockGoose/BrianDump/cards.schema.json",
+  "title": "BrianDump brain dump cards",
+  "description": "The card deck produced from one brain dump.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "executiveSummary",
+    "talkingPoints",
+    "actions",
+    "nextPrompts"
+  ],
+  "properties": {
+    "executiveSummary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "3-6 sentence summary of the whole recording."
+    },
+    "talkingPoints": {
+      "type": "array",
+      "description": "One entry per theme, each with bullets (mirrors 'Updates & Thoughts').",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "theme",
+          "bullets"
+        ],
+        "properties": {
+          "theme": {
+            "type": "string",
+            "minLength": 1
+          },
+          "bullets": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "actions": {
+      "type": "array",
+      "description": "Concrete things Claude proposes to do; each can be approved.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "title",
+          "deliverable",
+          "why",
+          "status",
+          "effort"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "deliverable": {
+            "type": "string",
+            "minLength": 1
+          },
+          "why": {
+            "type": "string",
+            "minLength": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "proposed",
+              "approved",
+              "working",
+              "done",
+              "rejected"
+            ]
+          },
+          "effort": {
+            "type": "string",
+            "enum": [
+              "quick",
+              "approval"
+            ],
+            "description": "quick = a short answer or memo Claude could write right away; approval = anything bigger (building, changing files, anything outward)."
+          }
+        }
+      }
+    },
+    "nextPrompts": {
+      "type": "array",
+      "description": "Questions / topics for the next brain dump (about 5).",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "question"
+        ],
+        "properties": {
+          "question": {
+            "type": "string",
+            "minLength": 1
+          },
+          "topic": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "project": {
+      "type": "string",
+      "description": "Project name inferred from the recording, if any."
+    },
+    "todos": {
+      "type": "array",
+      "description": "Things the SPEAKER said they will do themselves (errands, chores, builds, calls). Not Claude tasks. Short imperative phrases.",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    }
+  }
+}

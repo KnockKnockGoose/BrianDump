@@ -1,0 +1,19 @@
+{
+  "name": "briandump",
+  "owner": {
+    "name": "Brian Mahoney"
+  },
+  "metadata": {
+    "description": "A side panel and a push-to-talk key for Claude Code on Windows.",
+    "version": "0.1.1"
+  },
+  "plugins": [
+    {
+      "name": "briandump",
+      "source": "./plugin",
+      "description": "SessionStart + Notification hooks and the /briandump:ask and /briandump:agenda commands for the BrianDump panel and push-to-talk key.",
+      "version": "0.1.1",
+      "category": "productivity"
+    }
+  ]
+}

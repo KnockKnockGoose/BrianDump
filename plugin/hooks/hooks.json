@@ -1,0 +1,29 @@
+{
+  "description": "BrianDump: SessionStart tells the session how voice arrives; Notification flags the panel's needs-you banner. Exec form (command + args, Claude Code 2.1.139+): no shell, so no quoting and no shell profile output in front of the JSON.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/session_start.py"],
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py",
+            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/needs_you.py"],
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

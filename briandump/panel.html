@@ -1,0 +1,1116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BrianDump</title>
+<link rel="icon" href="/favicon.ico">
+<!--
+  BrianDump panel: one narrow column for the right third of a screen, next to the terminal. Status strip (also the title
+  bar), context meter and the Dump strip on top; tabs Panel (questions | agenda, steps), Dumps (your brain dumps and
+  their cards), Reports (Markdown reports, read in place), Voice (the hold-to-talk router). Everything comes from /api/* on
+  the same origin, polled; no build step, no external requests (system fonts).
+-->
+<style>
+  :root {
+    --bg: #0a1020;           /* deep navy */
+    --panel: #101a30;
+    --line: #22304d;
+    --text: #e9eef7;
+    --muted: #93a1ba;
+    --brass: #e0b34f;
+    --brass-dim: #5c4a22;
+    --green: #6fd08a;
+    --blue: #7db4ff;
+    --red: #e07a5f;
+    --card: #121d36;
+    --scale: 1;               /* text size: config.json 'scale' */
+    --sans: Inter, "Segoe UI", system-ui, sans-serif;
+    --mono: "Cascadia Mono", Consolas, "JetBrains Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  html { zoom: var(--scale); }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.5 var(--sans);
+    display: grid; grid-template-rows: auto auto auto minmax(0, 1fr); overflow: hidden;
+  }
+  button { min-height: 24px; font-family: var(--sans); }
+
+  /* status strip (doubles as the title bar) */
+  #status { display: flex; align-items: center; gap: 10px; padding: 10px 12px 8px; background: var(--panel); flex-wrap: wrap; }
+  #dot { width: 12px; height: 12px; border-radius: 50%; flex: none; background: var(--muted); }
+  #dot.working  { background: var(--brass); animation: pulse 1.2s ease-in-out infinite; }
+  #dot.thinking { background: var(--blue);  animation: pulse 2s ease-in-out infinite; }
+  #dot.idle     { background: var(--green); }
+  @keyframes pulse { 50% { opacity: .35; transform: scale(.8); } }
+  @keyframes blink { 50% { opacity: .55; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #activity { flex: 1 1 0; min-width: 0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #elapsed { color: var(--muted); font: 13px var(--mono); }
+  #offline { display: none; color: var(--red); font-size: 12px; }
+  /* sandbox mode (BRIANDUMP_SANDBOX=1): nothing outward; the badge makes it impossible to mistake for the real panel */
+  #sandbox { display: none; font: 600 10px var(--sans); letter-spacing: .12em; color: #0a1020; background: #ff5a4f; border-radius: 4px; padding: 2px 6px; }
+  html.sandbox #sandbox { display: inline-block; }
+  /* needs-you: the whole status strip turns red */
+  #status.needs { background: #5a1f1a; }
+  #dot.needs { background: #ff6b57; animation: pulse .7s ease-in-out infinite; }
+  #status.needs #activity { color: #ffd9d2; white-space: normal; }
+
+  /* tabs + window buttons (the frameless window has no title bar of its own) */
+  #bar { display: flex; align-items: center; gap: 4px; padding: 0 12px 8px; background: var(--panel); }
+  #tabs { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; min-width: 0; }   /* wraps instead of running off a narrow window */
+  #tabs button, #winbtns button { height: 24px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg);
+    color: var(--muted); font: 12px var(--sans); cursor: pointer; }
+  #tabs button { display: flex; align-items: center; gap: 6px; padding: 0 10px; }
+  #tabs button:hover, #winbtns button:hover { color: var(--text); border-color: var(--brass); }
+  #tabs button.on { color: var(--text); border-color: var(--brass); }
+  #winbtns { display: flex; gap: 4px; }
+  #winbtns button { width: 30px; font-size: 13px; line-height: 1; }
+  #winbtns button.close:hover { background: #5a1f1a; border-color: var(--red); color: #ffd9d2; }
+  #tabs .vdot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+  #tabs .vdot.on { background: var(--green); } #tabs .vdot.queued { background: var(--brass); } #tabs .vdot.failed { background: var(--red); }
+
+  /* context meter */
+  #ctx { display: flex; align-items: center; gap: 8px; padding: 0 12px 8px; background: var(--panel);
+         font-size: 11px; color: var(--muted); }
+  #ctxbar { flex: 1; height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+  #ctxfill { height: 100%; width: 0; background: var(--green); transition: width .5s; }
+  #ctxfill.mid { background: var(--brass); } #ctxfill.high { background: var(--red); }
+
+  /* Dump strip: the dump toggle (same as the dump key), recording time + level, then the processing stages */
+  #dumpstrip { display: flex; align-items: center; gap: 10px; padding: 7px 12px; background: var(--panel); border-top: 1px solid var(--line);
+               border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--muted); flex-wrap: wrap; }
+  #dumpbtn { min-height: 26px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--brass-dim); background: var(--bg); color: var(--text);
+             font: 600 12.5px var(--sans); cursor: pointer; white-space: nowrap; }
+  #dumpbtn:hover:not(:disabled) { border-color: var(--brass); }
+  #dumpbtn:disabled { color: var(--muted); cursor: default; opacity: .6; }
+  #dumpbtn.rec { background: #5a1f1a; border-color: var(--red); color: #ffd9d2; animation: blink 1.2s ease-in-out infinite; }
+  #dumptxt { flex: 1; min-width: 120px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #dumptxt b { color: var(--text); font-weight: 500; }
+  #dumptxt .err { color: #ff8a75; }
+  #level { width: 110px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+  #levelfill { height: 100%; width: 0; background: var(--green); transition: width .12s; }
+  #levelfill.hot { background: var(--brass); } #levelfill.clip { background: #ff5a4f; }
+  .spin { display: inline-block; width: 11px; height: 11px; border: 2px solid var(--line); border-top-color: var(--brass); border-radius: 50%;
+          animation: spin .9s linear infinite; vertical-align: -2px; margin-right: 4px; }
+  /* a sibling module that did not load: one quiet line, the server's reason in the tooltip */
+  #warn { padding: 4px 12px; background: var(--panel); color: #ff8a75; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #warn[hidden] { display: none; }
+  .note { color: var(--muted); font-size: 12px; margin: -2px 0 8px; line-height: 1.4; }
+
+  /* native window drag (frameless.py: WebView2 non-client regions): Windows runs the move, so it snaps */
+  #status, #bar, #ctx { app-region: drag; -webkit-app-region: drag; }
+  #bar button, #status a { app-region: no-drag; -webkit-app-region: no-drag; }
+
+  /* the three views share row 4; one shows at a time */
+  .view { grid-row: 4; min-height: 0; overflow-y: auto; overflow-x: hidden; }
+  .view[hidden] { display: none; }
+  .view::-webkit-scrollbar, #qwrap::-webkit-scrollbar, #agwrap::-webkit-scrollbar { width: 8px; }
+  .view::-webkit-scrollbar-thumb, #qwrap::-webkit-scrollbar-thumb, #agwrap::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+  section { padding: 12px 12px 6px 14px; border-bottom: 1px solid var(--line); }
+  /* Panel tab: questions | agenda side by side, each scrolling on its own; steps full width underneath */
+  #panelview:not([hidden]) { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden; }
+  #voicemini { grid-column: 1 / -1; grid-row: 1; } #voicemini[hidden] { display: none; }
+  #qwrap, #agwrap { min-height: 0; overflow-y: auto; grid-row: 2; }
+  #qwrap { grid-column: 1; border-right: 1px solid var(--line); } #agwrap { grid-column: 2; }
+  #stepwrap { grid-column: 1 / -1; grid-row: 3; max-height: 30vh; overflow-y: auto; border-top: 1px solid var(--line); }
+  @media (max-width: 480px) {   /* a narrow window: one column, the whole tab scrolls */
+    #panelview:not([hidden]) { display: block; overflow-y: auto; }
+    #qwrap, #agwrap { overflow: visible; border-right: 0; }
+    #stepwrap { max-height: none; }
+  }
+  h2 { margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: .12em;
+       text-transform: uppercase; color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  h2 .b { margin-left: auto; letter-spacing: 0; text-transform: none; font-weight: 400; }
+  .count { background: var(--brass); color: #0a1020; border-radius: 9px; padding: 0 7px; font-size: 11px; letter-spacing: 0; }
+  .none { color: var(--muted); font-size: 13px; padding-bottom: 8px; line-height: 1.45; }
+  .none code, .vh code, .note code { font: 11.5px var(--mono); }
+  button.b { min-height: 24px; font: inherit; font-size: 12.5px; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+             border-radius: 5px; padding: 2px 10px; cursor: pointer; }
+  button.b:hover:not(:disabled) { border-color: var(--brass); }
+  button.b.go { background: var(--brass); color: #0a1020; border-color: var(--brass); font-weight: 600; }
+  button.b:disabled { opacity: .5; cursor: default; }
+  .msg { font-size: 12px; } .msg.ok { color: var(--green); } .msg.err { color: #ff8a75; }
+  .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+
+  /* questions */
+  .q { position: relative; border: 1px solid var(--brass-dim); border-left: 3px solid var(--brass);
+       background: var(--card); border-radius: 6px; padding: 7px 10px; margin-bottom: 8px; }
+  .q.think { border-color: var(--line); border-left-color: var(--blue); }
+  .q .kind { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--brass); padding-right: 18px; }
+  .q.think .kind { color: var(--blue); }
+  .q .text { margin: 2px 0 6px; line-height: 1.4; overflow-wrap: anywhere; }
+  .q button, .q input { font: inherit; font-size: 13.5px; color: var(--text); background: var(--bg);
+                        border: 1px solid var(--line); border-radius: 5px; padding: 4px 9px; min-height: 24px; }
+  .q button { cursor: pointer; }
+  .q button:hover { border-color: var(--brass); }
+  .q input { flex: 1; min-width: 100px; }
+  .q input:focus { outline: none; border-color: var(--brass); }
+  .q.sent { opacity: .45; }
+  .q .x { position: absolute; top: 2px; right: 2px; background: none; border: 0; color: var(--muted);
+          cursor: pointer; font-size: 12px; padding: 0 6px; min-height: 24px; min-width: 24px; }
+  .q .x:hover { color: var(--text); }
+  .q .qmsg { font-size: 12px; color: #ff8a75; margin-top: 4px; }
+  .q .opt { font-size: 13px; color: var(--muted); border: 1px dashed var(--line); border-radius: 5px; padding: 2px 8px; }
+  /* 🎤 Answer: one question armed for your next talk clip; the strip shows on every tab, the card is outlined */
+  .q button.mic { white-space: nowrap; }
+  .q.armed { border-color: var(--brass); box-shadow: 0 0 0 1px var(--brass) inset; }
+  .q.armed button.mic { background: var(--brass); color: #0a1020; border-color: var(--brass); font-weight: 600; }
+  #armstrip { display: flex; align-items: center; gap: 10px; padding: 7px 12px; background: #3a2f12; border-top: 1px solid var(--brass);
+              border-bottom: 1px solid var(--brass); color: #ffe7a8; font-size: 13px; }
+  #armstrip[hidden] { display: none; }
+  #armstrip .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #armstrip b { color: #fff4d6; }
+  #armstrip .left { font: 600 13px var(--mono); }
+  #armstrip.listening { background: #5a1f1a; border-color: var(--red); color: #ffd9d2; animation: blink 1.2s ease-in-out infinite; }
+  #armstrip.sent { background: #173a26; border-color: var(--green); color: #c9f2d6; }
+  #armstrip button { min-height: 24px; font: 12.5px var(--sans); color: inherit; background: none; border: 1px solid currentColor;
+                     border-radius: 5px; padding: 0 10px; cursor: pointer; }
+  .q .hint { font-size: 12px; color: var(--muted); }
+
+  /* agenda */
+  #agenda { line-height: 1.4; }
+  .ag > div { min-width: 0; overflow-wrap: anywhere; }
+  .ag { display: flex; gap: 8px; align-items: flex-start; padding: 5px 0; border-bottom: 1px solid #16213a; cursor: pointer; }
+  .ag .box { width: 15px; height: 15px; flex: none; margin-top: 3px; border: 1.5px solid var(--brass); border-radius: 3px; text-align: center; line-height: 12px; font-size: 11px; color: #0a1020; }
+  .ag.done .box { background: var(--green); border-color: var(--green); } .ag.done .h { color: var(--muted); text-decoration: line-through; }
+  .ag .h { font-weight: 500; }
+  .ag .undo { font-size: 12px; color: var(--brass); }
+  #agdone { margin-top: 8px; }
+  #agtoggle { background: none; border: 0; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; padding: 4px 0; }
+  .agd { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; font-size: 13px; color: var(--muted); padding: 3px 0; }
+  .agd span { min-width: 0; overflow-wrap: anywhere; }
+  .agd button { flex: none; font-size: 11px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; cursor: pointer; }
+  #agform { display: flex; gap: 6px; margin: 8px 0 4px; }
+  #agform input { flex: 1; min-width: 60px; font: inherit; font-size: 13px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 3px 8px; }
+  #agform input:focus { outline: none; border-color: var(--brass); }
+
+  /* steps */
+  #steps { font-size: 12.5px; }
+  .st { display: flex; gap: 7px; align-items: baseline; padding: 2px 0; color: var(--muted); }
+  .st .ic { width: 14px; flex: none; text-align: center; }
+  .st .tx { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .st .du { font: 11px var(--mono); }
+  .st.ok .ic { color: var(--green); } .st.err .ic { color: var(--red); } .st.err .tx { color: #e8a090; }
+  .st.now { color: var(--text); font-weight: 500; } .st.now .ic { color: var(--brass); }
+  .st.now .tx { white-space: normal; }
+
+  /* Dumps tab: the list, then the selected dump's cards */
+  .dl { display: flex; gap: 8px; align-items: baseline; padding: 6px 8px; border: 1px solid var(--line); border-left: 3px solid var(--line);
+        border-radius: 6px; background: var(--card); margin-bottom: 6px; cursor: pointer; }
+  .dl.on { border-color: var(--brass); }
+  .dl.ready { border-left-color: var(--green); } .dl.error { border-left-color: var(--red); } .dl.busy { border-left-color: var(--blue); }
+  .dl .when { font: 12px var(--mono); color: var(--text); white-space: nowrap; }
+  .dl .dur { font: 11px var(--mono); color: var(--muted); white-space: nowrap; }
+  .dl .sum { flex: 1 1 100px; min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+  .dl.unseen .sum { color: var(--text); font-weight: 500; }
+  .chip { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; color: var(--muted); white-space: nowrap; }
+  .chip.ready { color: var(--green); border-color: #1f4a2e; } .chip.error { color: #ff8a75; border-color: #5a1f1a; } .chip.busy { color: var(--blue); border-color: #2a3f66; }
+  #dumpdetail h3 { margin: 12px 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .1em; color: var(--brass); font-weight: 600; }
+  #dumpdetail .meta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+  #dumpdetail .meta b { color: var(--text); font-weight: 500; }
+  #dumpdetail .sumtext { font-size: 14px; line-height: 1.5; }
+  #dumpdetail ul { margin: 2px 0 6px; padding-left: 18px; font-size: 13.5px; line-height: 1.45; }
+  #dumpdetail .theme { font-weight: 500; margin-top: 4px; }
+  #dumpdetail .err { color: #ff8a75; font-size: 13px; margin: 6px 0; }
+  .act { border: 1px solid var(--line); border-left: 3px solid var(--brass); background: var(--card); border-radius: 6px; padding: 7px 10px; margin-bottom: 8px; }
+  .act .t { font-weight: 600; } .act .d { font-size: 13px; line-height: 1.4; } .act .w { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .act .row, .todo .row { margin-top: 6px; }
+  .act textarea { width: 100%; min-height: 72px; resize: vertical; font: 13px/1.4 var(--sans); color: var(--text); background: var(--bg);
+                  border: 1px solid var(--line); border-radius: 5px; padding: 6px 8px; margin-top: 6px; }
+  .act textarea:focus { outline: none; border-color: var(--brass); }
+  .act .sent { font-size: 12px; color: var(--green); }
+  .todo { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #16213a; font-size: 13.5px; }
+  .todo span { min-width: 0; overflow-wrap: anywhere; }
+  .todo .ok { font-size: 12px; color: var(--green); white-space: nowrap; }
+  #dumpdetail details { margin: 10px 0 4px; } #dumpdetail summary { cursor: pointer; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .08em; }
+  #dumpdetail pre { white-space: pre-wrap; font: 12.5px/1.5 var(--sans); color: var(--muted); background: var(--bg); border: 1px solid var(--line);
+                    border-radius: 6px; padding: 8px 10px; max-height: 40vh; overflow: auto; margin: 6px 0; }
+
+  /* Voice tab: what the router is doing - target, queued / delivered lines, Open Main */
+  #vsum { font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--muted); }
+  #voicestrip { border: 1px solid var(--brass-dim); background: var(--card); border-radius: 6px; padding: 7px 10px; margin-bottom: 8px; font-size: 12.5px; }
+  #voicestrip .vh { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--muted); }
+  #voicestrip .vh b { color: var(--text); font-size: 13px; }
+  #voicestrip .vh .target { color: var(--brass); } #voicestrip .vh .off { color: var(--red); }
+  #voicestrip button { min-height: 24px; padding: 0 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--muted); font-size: 12px; cursor: pointer; }
+  #voicestrip button:hover { color: var(--text); border-color: var(--brass); }
+  #voicestrip .openmain { margin-left: auto; }
+  .vrow { display: flex; gap: 7px; align-items: center; padding: 3px 0; border-top: 1px solid #16213a; }
+  .vrow .vg { width: 13px; flex: none; text-align: center; }
+  .vrow .vtx { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .vrow .vmeta { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .vrow.delivered .vg { color: var(--green); } .vrow.queued .vg { color: var(--brass); } .vrow.typing .vg { color: var(--blue); }
+  .vrow.failed .vg { color: var(--red); } .vrow.dropped { opacity: .55; }
+  #voicemini { font-size: 12px; color: var(--muted); padding: 6px 12px 0 14px; display: flex; gap: 6px; align-items: baseline; }
+  #voicemini .vg { font-size: 13px; } #voicemini.delivered .vg { color: var(--green); } #voicemini.queued .vg { color: var(--brass); } #voicemini.failed .vg { color: var(--red); }
+  #voicemini .t { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* a stale line (waited past voice.stale_s): the router waits for you - Send anyway / Drop, here and on the Voice tab */
+  .vrow.stale .vg, #voicemini.stale .vg { color: #ffb347; } #voicemini.stale .t { color: var(--text); }
+  #voicemini button { flex: none; min-height: 20px; padding: 0 8px; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); color: var(--muted); font-size: 11.5px; cursor: pointer; }
+  #voicemini button:hover { color: var(--text); border-color: var(--brass); }
+  #voicemini button.go, #voicestrip button.go { color: #0a1020; background: var(--brass); border-color: var(--brass); }
+  /* the signal toast: one short note per routed line - delivered / queued + why / not sent - over every tab */
+  #vtoast { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 50; width: max-content; max-width: min(92vw, 460px);
+    background: var(--card); border: 1px solid var(--line); border-left: 3px solid var(--green); border-radius: 6px; padding: 5px 10px 6px;
+    font-size: 12.5px; box-shadow: 0 4px 16px rgba(0, 0, 0, .45); pointer-events: none; }
+  #vtoast[hidden] { display: none; }
+  #vtoast.wait { border-left-color: var(--brass); } #vtoast.bad { border-left-color: var(--red); }
+  #vtoast .tt { display: flex; min-width: 0; white-space: nowrap; }        /* flex: the line's own box shrinks, so nothing pokes out */
+  #vtoast .tt b, #vtoast .tt span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+  #vtoast .tt b { flex: 0 0 auto; max-width: 100%; font-weight: 500; }
+  #vtoast .tt span { flex: 0 1 auto; color: var(--muted); }
+  #vtoast .tr { color: var(--muted); font-size: 11.5px; overflow-wrap: anywhere; }
+
+  a, a:visited { color: #f3e6c4; text-decoration: underline; text-decoration-color: rgba(224, 179, 79, .55); text-underline-offset: 2px; }
+  a:hover { color: var(--brass); text-decoration-color: var(--brass); }
+
+  /* Reports tab: the list (a dot until opened), then the selected report read in place */
+  .rl { display: flex; gap: 9px; align-items: flex-start; padding: 7px 9px; border: 1px solid var(--line); border-radius: 6px;
+        background: var(--card); margin-bottom: 6px; cursor: pointer; }
+  .rl:hover, .rl.on { border-color: var(--brass-dim); }
+  .rl .rdot { width: 8px; height: 8px; flex: none; margin-top: 6px; border-radius: 50%; border: 1px solid var(--line); }
+  .rl.unread .rdot { background: var(--brass); border-color: var(--brass); }
+  .rl .rt { flex: 1; min-width: 0; }
+  .rl .rtitle { font-size: 13.5px; line-height: 1.35; color: var(--muted); overflow-wrap: anywhere; }
+  .rl.unread .rtitle { color: var(--text); font-weight: 600; }
+  .rl .rsub { font-size: 11.5px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #rnote { overflow-wrap: anywhere; }
+  #repview { padding: 0 12px; border-bottom: 0; }
+  #repbar { position: sticky; top: 0; z-index: 1; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 0 -12px;
+            padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  #repbar .sp { flex: 1; }
+
+  /* the report itself: an academic page (serif body, Segoe UI headings, hairline tables) on light or dark paper. The sizes
+     are the print sizes of the academic PDF style in em, so the 10pt print base below gives them exactly. */
+  .doc { --paper: #fffefb; --ink: #0b0b0b; --sub: #52514e; --hair: #e1e0d9; --rule: #c3c2b7; --head: #898781; --codebg: #f6f5f1;
+         --link: #1c5cab; --quote: #3a3936;
+         background: var(--paper); color: var(--ink); font: 15px/1.42 Georgia, Cambria, "Times New Roman", serif;
+         max-width: 46em; margin: 12px auto 28px; padding: 26px 30px 30px; border-radius: 4px; box-shadow: 0 1px 8px rgba(0, 0, 0, .45); }
+  .doc.dark { --paper: #121b2f; --ink: #e6e9f0; --sub: #a1abbe; --hair: #26324f; --rule: #3a4868; --head: #6c7a96; --codebg: #0c1324;
+              --link: #8db8ff; --quote: #c6cddb; box-shadow: none; border: 1px solid var(--line); }
+  .doc h1, .doc h2, .doc h3, .doc h4, .doc h5, .doc h6 { display: block; font-family: "Segoe UI", system-ui, sans-serif; color: var(--ink);
+         font-weight: 600; letter-spacing: normal; text-transform: none; line-height: 1.25; }
+  .doc h1 { font-size: 1.8em; line-height: 1.2; margin: 0 0 .25em; }
+  .doc h2 { font-size: 1.25em; margin: 1.3em 0 .35em; break-after: avoid; }
+  .doc h3 { font-size: 1.05em; margin: 1em 0 .3em; break-after: avoid; }
+  .doc h4, .doc h5, .doc h6 { font-size: 1em; margin: .8em 0 .2em; break-after: avoid; }
+  .doc p { margin: 0 0 .6em; text-align: justify; hyphens: auto; }
+  .doc .byline { font-family: "Segoe UI", system-ui, sans-serif; font-size: .88em; color: var(--sub); margin: 0 0 1em; padding-bottom: .6em;
+                 border-bottom: 1px solid var(--rule); overflow-wrap: anywhere; }
+  .doc .tablewrap { overflow-x: auto; margin: .5em 0 .8em; }
+  .doc table { border-collapse: collapse; width: 100%; font-family: "Segoe UI", system-ui, sans-serif; font-size: .8em; }
+  .doc thead { display: table-header-group; }
+  .doc tr { break-inside: avoid; }
+  .doc th, .doc td { border-bottom: 1px solid var(--hair); padding: .25em .45em; vertical-align: top; text-align: left; }
+  .doc th { border-bottom: 1.5px solid var(--head); font-weight: 600; }
+  .doc .al-c { text-align: center; }
+  .doc .al-r { text-align: right; }
+  .doc ul, .doc ol { margin: 0 0 .6em; padding-left: 1.8em; }
+  .doc li { margin-bottom: .2em; }
+  .doc li > ul, .doc li > ol { margin: .2em 0 .1em; }
+  .doc li.task { list-style: none; }
+  .doc li.task .box { display: inline-block; width: 1.2em; margin-left: -1.2em; }
+  .doc code { font-family: Consolas, "Courier New", monospace; font-size: .86em; }
+  .doc pre { font-family: Consolas, "Courier New", monospace; font-size: .82em; line-height: 1.4; background: var(--codebg);
+             border: 1px solid var(--hair); padding: .5em .7em; margin: .4em 0 .8em; white-space: pre-wrap; overflow-wrap: anywhere; break-inside: avoid; }
+  .doc pre code { font-size: inherit; }
+  .doc pre.plain { font-family: inherit; font-size: 1em; background: none; border: 0; padding: 0; }
+  .doc blockquote { margin: .6em 0; padding: .1em 0 .1em 1em; border-left: 2px solid var(--rule); color: var(--quote); }
+  .doc a, .doc a:visited { color: var(--link); text-decoration: none; }
+  .doc a:hover { color: var(--link); text-decoration: underline; }
+  .doc .xref { border-bottom: 1px dotted var(--sub); }
+  .doc .img { color: var(--sub); font-style: italic; }
+  .doc hr { border: 0; border-top: 1px solid var(--hair); margin: 1em 0; }
+  .doc del { color: var(--sub); }
+  @media (max-width: 520px) { .doc { padding: 18px 16px 22px; } .doc p { text-align: left; } }
+
+  /* Save as PDF = the browser's own print dialog. While a report is open (html.printdoc) the print is that report alone,
+     on white paper at 10pt: Letter or A4, whichever the printer is set to. */
+  @media print {
+    @page { margin: 0.7in 0.75in 0.75in 0.75in; }
+    html.printdoc { zoom: 1 !important; }
+    html.printdoc, html.printdoc body { height: auto !important; overflow: visible !important; background: #fff !important; }
+    html.printdoc body { display: block !important; }
+    html.printdoc body > :not(#reportsview), html.printdoc #replistwrap, html.printdoc #repbar { display: none !important; }
+    html.printdoc #reportsview, html.printdoc #repview { display: block !important; overflow: visible !important; padding: 0 !important; }
+    html.printdoc .doc { --paper: #fff; --ink: #0b0b0b; --sub: #52514e; --hair: #e1e0d9; --rule: #c3c2b7; --head: #898781;
+                         --codebg: #f6f5f1; --link: #1c5cab; --quote: #3a3936;
+                         font-size: 10pt; line-height: 1.38; max-width: 7in; margin: 0 auto; padding: 0; border: 0; border-radius: 0; box-shadow: none; }
+    html.printdoc .doc .tablewrap { overflow: visible; }
+    html.printdoc .doc p { text-align: justify; }
+  }
+</style>
+</head>
+<body>
+  <div>
+    <div id="status">
+      <div id="dot" class="pywebview-drag-region"></div>
+      <div id="activity" class="pywebview-drag-region">Connecting…</div>
+      <span id="offline">server offline</span>
+      <span id="sandbox" title="Sandbox: everything under one directory, nothing outward (BRIANDUMP_SANDBOX=1)">SANDBOX</span>
+      <div id="elapsed" class="pywebview-drag-region"></div>
+    </div>
+    <div id="bar">
+      <div id="tabs">
+        <button data-tab="panel" class="on">Panel</button><button data-tab="dumps" title="Your brain dumps: summary, themes, actions, to-dos, questions, transcript">Dumps <span class="count" id="dbadge" hidden></span></button><button data-tab="reports" title="Reports: brain-dump reports and the ones config.json's reports settings add, newest first; a dot until you open one">Reports <span class="count" id="rbadge" hidden></span></button><button data-tab="voice" title="Hold-to-talk: where your words go, what was typed into which session, anything queued or failed"><span class="vdot" id="vdot"></span>Voice <span class="count" id="vbadge" hidden></span></button>
+      </div>
+      <div id="winbtns"><button data-w="min" title="Minimise">&#x2013;</button><button data-w="max" title="Right third of the screen &lt;-&gt; a smaller window">&#x25A2;</button><button data-w="close" class="close" title="Close the panel">&#x2715;</button></div>
+    </div>
+    <div id="warn" hidden></div>
+    <div id="armstrip" hidden role="status" aria-live="polite"></div>
+  </div>
+  <div id="ctx" class="pywebview-drag-region"><span>Context</span><div id="ctxbar"><div id="ctxfill"></div></div><span id="ctxtxt">–</span></div>
+  <div id="dumpstrip">
+    <button id="dumpbtn" disabled title="start the hold-to-talk service (BrianDump PTT)">● Dump</button>
+    <span id="dumptxt">hold-to-talk service not running</span>
+    <div id="level" hidden><div id="levelfill"></div></div>
+  </div>
+
+  <main id="panelview" class="view">
+    <div id="voicemini" hidden></div>
+    <section id="qwrap">
+      <h2>Questions for you <span class="count" id="qcount">0</span></h2>
+      <div id="questions"></div>
+    </section>
+    <section id="agwrap">
+      <h2>Agenda <span class="count" id="agcount">0</span></h2>
+      <div id="agenda"></div>
+      <form id="agform" autocomplete="off"><input id="aginput" placeholder="Add to the agenda…" maxlength="300"><button class="b" type="submit">Add</button></form>
+    </section>
+    <section id="stepwrap">
+      <h2>Steps</h2>
+      <div id="steps"></div>
+    </section>
+  </main>
+
+  <main id="dumpsview" class="view" hidden>
+    <section>
+      <h2>Brain dumps <span class="count" id="dcount">0</span> <span id="dmeta"></span><button class="b" id="openreports" title="Open the reports folder: one markdown file per dump">Open reports folder</button></h2>
+      <div class="note" id="dnote">Each dump is turned into cards by one <code>claude -p</code> call under your own login: about one Claude message of usage.</div>
+      <div id="dumplist"><div class="none">Loading…</div></div>
+    </section>
+    <section id="dumpdetail" hidden></section>
+  </main>
+
+  <main id="reportsview" class="view" hidden>
+    <section id="replistwrap">
+      <h2>Reports <span class="count" id="rcount">0</span> <span id="rmeta"></span><span class="b"><button class="b" id="rreadall" hidden title="Mark every report as opened">Mark all read</button> <button class="b" id="rrefresh" title="Look for new reports now">&#x21bb;</button></span></h2>
+      <div class="note" id="rnote" hidden></div>
+      <div id="replist"><div class="none">Loading…</div></div>
+    </section>
+    <section id="repview" hidden>
+      <div id="repbar"><button class="b" id="repback" title="Back to the list (Esc)">&#x2190; Reports</button><span class="msg" id="repmsg"></span><span class="sp"></span><button class="b" id="reptheme" title="Light or dark page">&#x263e; Dark</button><button class="b" id="repopen" title="Open the file in its own app">Open file</button><button class="b go" id="reppdf" title="Opens the print dialog: choose Save as PDF as the printer">Save as PDF</button></div>
+      <article id="repdoc" class="doc"></article>
+    </section>
+  </main>
+
+  <main id="voiceview" class="view" hidden>
+    <section>
+      <h2>Hold-to-talk <span id="vsum"></span></h2>
+      <div id="voicestrip"><div class="none">Loading…</div></div>
+    </section>
+  </main>
+  <div id="vtoast" role="status" aria-live="polite" hidden></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hhmm = ts => ts ? new Date(ts).toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'}) : '';
+const when = iso => { if (!iso) return ''; const d = new Date(iso); if (isNaN(d)) return String(iso);
+  return (d.toDateString() === new Date().toDateString() ? '' : d.toLocaleDateString([], {month: 'short', day: 'numeric'}) + ' ') + hhmm(iso); };
+const ago = iso => { if (!iso) return ''; const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+  return s < 60 ? `${Math.round(s)} s` : s < 3600 ? `${Math.floor(s / 60)} min` : s < 86400 ? `${Math.floor(s / 3600)} h ${Math.floor(s % 3600 / 60)} min` : `${Math.floor(s / 86400)} d`; };
+const mmss = s => { s = Math.max(0, Math.round(Number(s) || 0)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+const keyName = k => String(k || '').replace(/_/g, ' ').toUpperCase();   // f9 -> F9, scroll_lock -> SCROLL LOCK
+const LOCAL = ['127.0.0.1', 'localhost', '[::1]'].includes(location.hostname);
+const postJSON = (url, body) => fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+const clock = s => { s = Math.max(0, Math.round(Number(s) || 0)); return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`; };
+let since = null, lastQKey = '', lastState = '';
+let KEY = 'F9', DUMPKEY = 'F2', MAIN = 'Main', CHIME = true, PROCESSOR = 'claude';
+const sentIds = new Set(), answeredAt = {};
+// what one dump costs (plan decision: one labelled `claude -p` call per dump, under the user's own login)
+const usageNote = () => PROCESSOR === 'mock'
+  ? 'Cards come from the mock processor (canned cards, no model call); set dump.processor to claude for real ones.'
+  : 'Each dump is turned into cards by one <code>claude -p</code> call under your own login: about one Claude message of usage.';
+
+// ---- tabs: Panel | Dumps | Reports | Voice (remembered) ----
+let tab = 'panel';
+function setTab(t, save = true) {
+  tab = ['panel', 'dumps', 'reports', 'voice'].includes(t) ? t : 'panel';
+  $('#panelview').hidden = tab !== 'panel'; $('#dumpsview').hidden = tab !== 'dumps'; $('#voiceview').hidden = tab !== 'voice';
+  $('#reportsview').hidden = tab !== 'reports';
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
+  document.documentElement.classList.toggle('printdoc', tab === 'reports' && !!repDoc);   // printing = the open report
+  if (tab === 'dumps') loadDumps(true);
+  if (tab === 'reports') loadReports(true);
+  if (tab === 'voice') loadVoice();
+  if (save) try { localStorage.setItem('briandumpTab', tab); } catch {}
+}
+$('#tabs').addEventListener('click', e => { const b = e.target.closest('button[data-tab]'); if (b) setTab(b.dataset.tab); });
+// deferred so the loaders (declared further down) exist; #dumps in the URL opens a tab directly
+setTimeout(() => { try { setTab(location.hash.slice(1) || localStorage.getItem('briandumpTab') || 'panel', false); } catch { setTab('panel', false); } }, 0);
+
+// ---- per-machine settings: text scale, key names, sandbox badge; native title bar = no duplicate window buttons ----
+fetch('/api/machine').then(r => r.json()).then(m => {
+  if (m.scale) document.documentElement.style.setProperty('--scale', m.scale);
+  if (m.title_bar === 'native' || m.window === 'none') $('#winbtns').style.display = 'none';
+  if (m.sandbox) { document.documentElement.classList.add('sandbox'); document.title = 'BrianDump · SANDBOX'; }
+  if (m.ptt_key) KEY = keyName(m.ptt_key);
+  if (m.dump_key) DUMPKEY = keyName(m.dump_key);
+  if (m.main_session) MAIN = m.main_session;
+  if (m.chime === false) CHIME = false;
+  if (m.processor) PROCESSOR = m.processor;
+  $('#dnote').innerHTML = usageNote();
+  const w = m.warnings || [];
+  $('#warn').hidden = !w.length;
+  if (w.length) {
+    $('#warn').textContent = `Running without ${(m.missing || []).map(x => 'briandump.' + x).join(', ')}: those parts of the panel are off`;
+    $('#warn').title = w.join('\n');
+  }
+  lastQKey = '';   // placeholders name the key
+}).catch(() => {});
+// the window and folder buttons act on the server machine's desktop: hide them when viewing from another machine
+if (!LOCAL) { $('#winbtns').style.display = 'none'; $('#openreports').hidden = true; $('#repopen').hidden = true; }
+
+// ---- questions: Claude's open questions, `briandump.py ask` ones, and the open items of questions.md (brain dumps).
+// Answers go to the inbox as panel typing (the only path from this page to the session). ----
+var lastQs = null;
+const dismissed = new Set((() => { try { return JSON.parse(localStorage.getItem('briandumpDismissedQs') || '[]'); } catch { return []; } })());
+function qKind(q) {   // q.to: the session that asked, where the answer goes (or "session ended")
+  const who = q.to ? ' · ' + esc(q.to) : '';
+  if (q.source === 'dump') return 'From your brain dump' + (q.topic ? ' · ' + esc(q.topic) : '');
+  if (q.source === 'message') return 'Claude asked' + who;
+  if (q.source === 'asked') return 'Claude asked' + who + ' · answer in the terminal';
+  if (q.kind === 'think') return 'To think about' + who;
+  return 'Needs your answer' + who;
+}
+function qCard(q, closable = true) {
+  // an AskUserQuestion (source 'asked') is a dialog in the terminal: the router never types into a dialog, so the card shows
+  // its options for reference and says where to answer, instead of buttons whose answer would only land after it closed
+  const row = q.source === 'asked'
+    ? (q.options || []).map(o => `<span class="opt">${esc(o)}</span>`).join('') + '<span class="hint">the dialog is open in the terminal: pick there</span>'
+    : (q.options || []).map((o, i) => `<button data-a="${esc(o)}" data-o="${i}">${esc(o)}</button>`).join('') +
+      `<input placeholder="Type an answer">` +
+      `<button class="mic" data-mic="1" title="Answer by voice: your next ${esc(KEY)} clip, started within a minute, answers this question (Esc cancels)">🎤 Answer</button>`;
+  return `<div class="q ${q.kind === 'think' || q.source === 'dump' ? 'think' : 'ask'}${sentIds.has(q.id) ? ' sent' : ''}" data-id="${esc(q.id)}">
+      ${closable ? `<button class="x" data-x="${esc(q.id)}" title="Dismiss">✕</button>` : ''}
+      <div class="kind">${qKind(q)}</div>
+      <div class="text">${esc(q.text)}</div>
+      <div class="row">${row}</div></div>`;
+}
+function drawQuestions(qs) {
+  lastQs = qs;
+  qs = qs.filter(q => !dismissed.has(q.id));
+  $('#qcount').textContent = qs.length;
+  const key = JSON.stringify(qs.map(q => q.id + q.text)) + KEY;
+  if (key === lastQKey) return;          // don't wipe a half-typed answer
+  lastQKey = key;
+  $('#questions').innerHTML = qs.length ? qs.map(q => qCard(q)).join('') : '<div class="none">Nothing waiting on you.</div>';
+}
+async function answer(card, text, option) {   // option: a button's index, so the server types the real (maybe masked) option
+  if (!card || !text.trim()) return;
+  const id = card.dataset.id, dump = card.closest('#dumpdetail') && dumpDetail ? dumpDetail.id : undefined;
+  if (Date.now() - (answeredAt[id] || 0) < 3000) return;   // a double click used to send it twice
+  answeredAt[id] = Date.now();
+  card.classList.add('sent'); sentIds.add(id);
+  try {
+    const r = await (await postJSON('/api/answer', {id, text, dump, option})).json();
+    if (!r.ok) { card.classList.remove('sent'); sentIds.delete(id); card.insertAdjacentHTML('beforeend', `<div class="qmsg">${esc(r.error || 'not sent')}</div>`); }
+  } catch { card.classList.remove('sent'); sentIds.delete(id); }
+}
+function qClick(e) {
+  const x = e.target.closest('button[data-x]');
+  if (x) {
+    dismissed.add(x.dataset.x);
+    try { localStorage.setItem('briandumpDismissedQs', JSON.stringify([...dismissed].slice(-300))); } catch {}
+    lastQKey = ''; x.closest('.q').remove(); $('#qcount').textContent = $('#questions').querySelectorAll('.q').length;
+    return;
+  }
+  const m = e.target.closest('button[data-mic]');
+  if (m) return micClick(m.closest('.q'));
+  const b = e.target.closest('button[data-a]');
+  if (b) answer(b.closest('.q'), b.dataset.a, Number(b.dataset.o));
+}
+// ---- 🎤 Answer: arm one question for your next talk clip. The server keeps the arm (answers.py); the clip itself is still
+// the only thing typed, with the question quoted in front. Esc, Cancel, the timeout or that one clip disarm it. ----
+let armed = null, armUntil = 0, armSent = 0;
+async function micClick(card) {
+  if (!card) return;
+  if (armed && armed.id === card.dataset.id) return disarm();
+  const dump = card.closest('#dumpdetail') && dumpDetail ? dumpDetail.id : undefined;
+  card.querySelector('.qmsg')?.remove();
+  try {
+    const r = await (await postJSON('/api/answer/arm', {id: card.dataset.id, dump})).json();
+    if (r.ok) drawArmed(r.armed);
+    else card.insertAdjacentHTML('beforeend', `<div class="qmsg">${esc(r.error || 'could not arm it')}</div>`);
+  } catch { card.insertAdjacentHTML('beforeend', '<div class="qmsg">panel server did not answer</div>'); }
+}
+async function disarm() {
+  const nonce = armed && armed.nonce;
+  drawArmed(null, true);
+  try { await postJSON('/api/answer/disarm', {nonce}); } catch {}
+}
+function drawArmed(a, cancelled = false) {
+  if (!a && armed && armed.listening && !cancelled) armSent = Date.now();   // it was recording your answer: now it is on its way
+  armed = a || null;
+  if (armed) armUntil = Date.now() + (armed.left || 0) * 1000;
+  document.querySelectorAll('.q').forEach(q => {
+    const on = !!armed && q.dataset.id === armed.id;
+    q.classList.toggle('armed', on);
+    const m = q.querySelector('button.mic'); if (m) m.textContent = on ? 'Cancel 🎤' : '🎤 Answer';
+  });
+  armTick();
+}
+function armTick() {   // the strip's elements stay put (a Cancel button rebuilt 4 times a second would eat clicks); only text changes
+  const el = $('#armstrip');
+  if (!el.firstChild) el.innerHTML = '<span class="t"></span><span class="left"></span><button data-disarm="1" title="Esc">Cancel</button>';
+  const t = el.querySelector('.t'), left = el.querySelector('.left'), btn = el.querySelector('button');
+  const put = h => { if (t.dataset.h !== h) { t.dataset.h = h; t.innerHTML = h; } };
+  if (!armed) {
+    const fresh = Date.now() - armSent < 4000;
+    el.hidden = !fresh; el.className = fresh ? 'sent' : ''; btn.hidden = true; left.textContent = '';
+    put(fresh ? '🎤 Your answer is on its way.' : '');
+    return;
+  }
+  const to = armed.to ? ` · to ${esc(armed.to)}` : '';
+  el.hidden = false; el.className = armed.listening ? 'listening' : ''; btn.hidden = false;
+  put(armed.listening ? `🎤 Recording your answer to <b>“${esc(armed.text)}”</b>${to}`
+                      : `🎤 Hold <b>${esc(KEY)}</b> and answer <b>“${esc(armed.text)}”</b>${to}`);
+  left.textContent = armed.listening ? '' : `${Math.max(0, Math.ceil((armUntil - Date.now()) / 1000))} s`;
+}
+$('#armstrip').addEventListener('click', e => { if (e.target.closest('button[data-disarm]')) disarm(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && armed) { e.preventDefault(); disarm(); } });
+function qKey(e) {
+  if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.closest('.q')) { answer(e.target.closest('.q'), e.target.value); e.target.value = ''; e.target.blur(); }
+}
+$('#questions').addEventListener('click', qClick);
+$('#questions').addEventListener('keydown', qKey);
+
+// ---- status strip, context meter, steps ----
+function tick() {
+  if (!since) { $('#elapsed').textContent = ''; return; }
+  const s = Math.max(0, Math.floor((Date.now() - new Date(since)) / 1000));
+  $('#elapsed').textContent = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${String(s % 60).padStart(2, '0')}s`;
+}
+const k = n => n >= 1e6 ? (n / 1e6).toFixed(n % 1e6 ? 2 : 0) + 'M' : Math.round(n / 1000) + 'k';
+const dur = (a, b) => { if (!a || !b) return ''; const s = (new Date(b) - new Date(a)) / 1000;
+  return s < 1 ? '' : s < 60 ? `${Math.round(s)}s` : `${Math.floor(s / 60)}m${String(Math.round(s % 60)).padStart(2, '0')}`; };
+
+// Two soft notes when Claude starts needing you (once per episode, never while working).
+function chime() {
+  try {
+    const ac = new AudioContext();
+    [[660, 0], [880, .18]].forEach(([f, t]) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = f; o.connect(g); g.connect(ac.destination);
+      g.gain.setValueAtTime(0, ac.currentTime + t);
+      g.gain.linearRampToValueAtTime(.18, ac.currentTime + t + .02);
+      g.gain.exponentialRampToValueAtTime(.001, ac.currentTime + t + .5);
+      o.start(ac.currentTime + t); o.stop(ac.currentTime + t + .55);
+    });
+  } catch {}
+}
+// The voice signal: quieter and shorter than chime(). One high blip = typed into the session; two low notes = it waits
+// (queued, the reason is in the toast) or was not sent (stale / failed).
+function vbeep(ok) {
+  try {
+    const ac = new AudioContext();
+    (ok ? [[1175, 0]] : [[523, 0], [392, .14]]).forEach(([f, t]) => {
+      const o = ac.createOscillator(), g = ac.createGain();
+      o.frequency.value = f; o.connect(g); g.connect(ac.destination);
+      g.gain.setValueAtTime(0, ac.currentTime + t);
+      g.gain.linearRampToValueAtTime(.07, ac.currentTime + t + .01);
+      g.gain.exponentialRampToValueAtTime(.001, ac.currentTime + t + .13);
+      o.start(ac.currentTime + t); o.stop(ac.currentTime + t + .15);
+    });
+    setTimeout(() => ac.close(), 800);
+  } catch {}
+}
+function drawContext(c) {
+  if (!c || !c.used) { $('#ctxfill').style.width = '0'; $('#ctxtxt').textContent = '–'; return; }
+  const pct = Math.min(100, 100 * c.used / (c.limit || 1)), f = $('#ctxfill');
+  f.style.width = pct + '%';
+  f.className = pct > 80 ? 'high' : pct > 55 ? 'mid' : '';
+  $('#ctxtxt').textContent = `${k(c.used)} / ${k(c.limit)}`;
+  $('#ctx').title = c.model ? `model ${c.model}` : '';
+}
+function drawSteps(steps, a) {
+  const rows = steps.slice(-6).map(s =>
+    `<div class="st ${s.error ? 'err' : 'ok'}"><span class="ic">${s.error ? '✕' : '✓'}</span>` +
+    `<span class="tx">${esc(s.text)}</span><span class="du">${dur(s.ts, s.end)}</span></div>`);
+  if (a.state === 'working' || a.state === 'needs')
+    rows.push(`<div class="st now"><span class="ic">${a.state === 'needs' ? '!' : '▸'}</span><span class="tx">${esc(a.text)}</span><span class="du"></span></div>`);
+  $('#steps').innerHTML = rows.length ? rows.reverse().join('') : '<div class="none">No steps yet.</div>';   // newest first
+}
+
+// ---- Dump strip: the toggle, recording time + level, then the processing stages ----
+function setLevel(db) {
+  const v = Number.isFinite(db) ? db : -60, pct = Math.max(0, Math.min(100, (v + 60) / 60 * 100)), f = $('#levelfill');
+  f.style.width = pct + '%';
+  f.className = v > -1 ? 'clip' : v > -9 ? 'hot' : '';
+}
+let dumpMsg = {text: '', until: 0};   // a refusal from the Dump button stays readable for a few seconds of polls
+function drawDump(p, d) {
+  p = p || {}; d = d || {};
+  const btn = $('#dumpbtn'), txt = $('#dumptxt'), lvl = $('#level');
+  const alive = !!p.alive, recDump = alive && p.recording && p.mode === 'dump', recTalk = alive && p.recording && p.mode === 'talk';
+  btn.disabled = !alive;
+  btn.title = !alive ? 'start the hold-to-talk service (BrianDump PTT)'
+    : recDump ? 'Stop the recording: it is transcribed on this PC, then turned into cards'
+    : `Start a brain dump (or press ${DUMPKEY}). ` + (PROCESSOR === 'mock' ? 'Mock cards: no model call.' : 'Turning it into cards uses about one Claude message.');
+  btn.classList.toggle('rec', !!recDump);
+  btn.textContent = recDump ? '■ Stop' : '● Dump';
+  lvl.hidden = !(recDump || recTalk);
+  if (recDump) { txt.innerHTML = `<b>Recording</b> · ${clock(p.seconds)}`; setLevel(p.level_db); return; }
+  if (recTalk) { txt.innerHTML = `<b>${esc(KEY)}</b> · listening`; setLevel(p.level_db); return; }
+  if (Date.now() < dumpMsg.until) { txt.innerHTML = `<span class="err">${esc(dumpMsg.text)}</span>`; return; }
+  if ((alive && p.transcribing) || d.transcribing) { txt.innerHTML = '<span class="spin"></span> Transcribing…'; return; }
+  if (d.thinking) { txt.innerHTML = '<span class="spin"></span> Making cards…'; return; }
+  if (d.queued) { txt.innerHTML = '<span class="spin"></span> Queued for cards…'; return; }
+  if (d.processing) { txt.innerHTML = '<span class="spin"></span> Processing…'; return; }
+  if (!alive) { txt.textContent = 'hold-to-talk service not running'; return; }
+  if (!p.ready) { txt.textContent = 'hold-to-talk service loading its model…'; return; }
+  txt.innerHTML = `press ${esc(DUMPKEY)} or click to start a brain dump` + (p.last_error ? ` · <span class="err">${esc(p.last_error)}</span>` : '');
+}
+$('#dumpbtn').addEventListener('click', async () => {
+  const b = $('#dumpbtn'); b.disabled = true;
+  try {
+    const r = await (await postJSON('/api/ptt', {action: 'dump_toggle'})).json();
+    if (!r.ok) dumpMsg = {text: r.msg || r.error || 'no reply from the hold-to-talk service', until: Date.now() + 5000};
+  } catch { dumpMsg = {text: 'panel server did not answer', until: Date.now() + 5000}; }
+  setTimeout(poll, 400);
+});
+
+let reloadSeen = null, lastDumpKey = '';
+async function poll() {
+  try {
+    const st = await (await fetch('/api/state')).json();
+    if (reloadSeen === null) reloadSeen = st.reload;                  // reload hook: POST /api/reload bumps it
+    else if (st.reload !== undefined && st.reload !== reloadSeen) return location.reload();
+    $('#offline').style.display = 'none';
+    const a = st.activity || {state: 'idle', text: 'No session'};
+    $('#dot').className = a.state;
+    $('#activity').textContent = a.text;
+    $('#activity').title = st.session ? `${st.project || ''} · session ${st.session}` : 'no Claude Code session found yet';
+    since = a.since;
+    $('#status').classList.toggle('needs', a.state === 'needs');
+    if (a.state === 'needs' && lastState !== 'needs' && CHIME) chime();
+    lastState = a.state;
+    drawContext(st.context);
+    drawSteps(st.steps || [], a);
+    drawQuestions(st.questions || []);
+    drawArmed(st.armed);
+    renderVoiceMini(st.voice);
+    voiceSignals(st.voice);
+    drawDump(st.ptt, st.dumps);
+    const dk = JSON.stringify(st.dumps || {});
+    if (dk !== lastDumpKey) {            // a dump changed state: refresh the list + badge, the agenda (to-dos land there)
+      if (lastDumpKey) { loadAgenda(); loadReports(true); }                  // and the reports (a finished dump writes one)
+      lastDumpKey = dk; loadDumps(true);
+    }
+  } catch { $('#offline').style.display = 'inline'; }
+}
+
+// ---- window: the strip is the title bar (drag to move; double-click = right third <-> smaller window). Local page only. ----
+$('#status').addEventListener('mousedown', e => {
+  if (!LOCAL || e.button !== 0 || e.target.closest('button') || window.pywebview) return;   // the frameless host drags natively
+  postJSON('/api/window', {action: 'drag'});
+});
+$('#status').addEventListener('dblclick', e => { if (LOCAL && !e.target.closest('button')) postJSON('/api/window', {action: 'max'}); });
+$('#winbtns').addEventListener('click', e => {
+  const b = e.target.closest('button[data-w]'); if (!b) return;
+  postJSON('/api/window', {action: b.dataset.w});
+});
+// links open in the default browser on this machine via the server; the panel itself never navigates away
+document.addEventListener('click', e => {
+  const a = e.target.closest('a[href]'); if (!a) return;
+  const url = a.href; if (!/^https?:/i.test(url) || url.startsWith(location.origin)) return;
+  e.preventDefault();
+  if (LOCAL) postJSON('/api/open', {url}).catch(() => window.open(url, '_blank', 'noopener'));
+  else window.open(url, '_blank', 'noopener');
+}, true);
+
+// ---- agenda: agenda.md is the truth (GET /api/agenda; done / undone / add edit the file). A tick made here stays in the open
+// list, struck through, for 2 minutes so it can be unticked; then it moves to Completed, where "re-add" unticks it. ----
+const GRACE_MS = 2 * 60 * 1000;
+let agItems = [], agFlip = {}, showDone = false, agBusy = 0, agError = '';   // agFlip: id -> ts of a tick made on this page
+const flipAge = id => agFlip[id] ? Date.now() - agFlip[id] : null;
+function drawAgenda() {
+  if (agError) { $('#agcount').textContent = '–'; $('#agenda').innerHTML = `<div class="none">${esc(agError)}</div>`; return; }
+  for (const id of Object.keys(agFlip)) { const it = agItems.find(a => a.id === id); if (!it || !it.done || flipAge(id) >= GRACE_MS) delete agFlip[id]; }
+  // file order: the server lists done items last, and a row ticked here must keep its place (its "click to undo" spot)
+  const open = agItems.filter(a => !a.done || agFlip[a.id]).sort((x, y) => (x.line ?? 0) - (y.line ?? 0));
+  const done = agItems.filter(a => a.done && !agFlip[a.id]);
+  $('#agcount').textContent = agItems.filter(a => !a.done).length;
+  // the line without BrianDump's "(from brain dump ...)" note; the whole line is the tooltip
+  const row = a => `<div class="ag${a.done ? ' done' : ''}" data-id="${esc(a.id)}" title="${esc(a.text)}"><span class="box">${a.done ? '✓' : ''}</span>
+    <div><div class="h">${esc(a.base || a.text)}</div>${a.done ? `<div class="undo">clears in ${Math.max(0, Math.ceil((GRACE_MS - flipAge(a.id)) / 1000))} s · click to undo</div>` : ''}</div></div>`;
+  $('#agenda').innerHTML = (open.map(row).join('') || '<div class="none">Nothing open.</div>') +
+    (done.length ? `<div id="agdone"><button id="agtoggle">${showDone ? '▾' : '▸'} Completed (${done.length})</button>${showDone ? done.map(a =>
+      `<div class="agd"><span title="${esc(a.text)}">✓ ${esc(a.base || a.text)}</span><button data-readd="${esc(a.id)}" title="Put it back on the agenda">↺ re-add</button></div>`).join('') : ''}</div>` : '');
+}
+async function flip(item, done) {
+  item.done = done;
+  if (done) agFlip[item.id] = Date.now(); else delete agFlip[item.id];
+  drawAgenda();
+  agBusy++;
+  try { await postJSON('/api/agenda', {action: done ? 'done' : 'undone', text: item.text, id: item.id}); } catch {}
+  agBusy--;
+  loadAgenda();
+}
+$('#agenda').addEventListener('click', e => {
+  if (e.target.closest('#agtoggle')) { showDone = !showDone; drawAgenda(); return; }
+  const ra = e.target.closest('button[data-readd]');
+  if (ra) { const it = agItems.find(a => a.id === ra.dataset.readd); if (it) flip(it, false); return; }
+  const r = e.target.closest('.ag'); if (!r) return;
+  const it = agItems.find(a => a.id === r.dataset.id); if (!it) return;
+  flip(it, !it.done);
+});
+$('#agform').addEventListener('submit', async e => {
+  e.preventDefault();
+  const inp = $('#aginput'), text = inp.value.trim(); if (!text) return;
+  inp.value = '';
+  try { await postJSON('/api/agenda', {action: 'add', text}); } catch {}
+  loadAgenda();
+});
+async function loadAgenda() {
+  try {
+    const r = await fetch('/api/agenda'), d = await r.json();
+    if (agBusy) return;                                   // a tick is still on its way: the local state is newer
+    agError = r.ok ? '' : (d.error || `agenda unavailable (HTTP ${r.status})`);
+    agItems = r.ok ? d.items || [] : [];
+    drawAgenda();
+  } catch (e) { console.warn('agenda', e); }
+}
+
+// ---- Dumps tab: the list (newest first) and the selected dump's cards. Unseen ready dumps count on the tab button. ----
+let dumpsRows = [], dumpSel = null, dumpDetail = null, dumpsAt = 0, detailBusy = false, sendOpen = null, sendText = '';
+const seenDumps = new Set((() => { try { return JSON.parse(localStorage.getItem('briandumpSeenDumps') || '[]'); } catch { return []; } })());
+const BUSY = ['recorded', 'transcribing', 'transcribed', 'thinking'];
+const statusText = s => ({recorded: 'recorded', transcribing: 'transcribing', transcribed: 'queued', thinking: 'making cards', ready: 'ready', error: 'error'})[s] || s || '';
+const statusCls = s => s === 'ready' ? 'ready' : s === 'error' ? 'error' : 'busy';
+function saveSeen() { try { localStorage.setItem('briandumpSeenDumps', JSON.stringify([...seenDumps].slice(-500))); } catch {} }
+function drawBadge() { const n = dumpsRows.filter(r => r.status === 'ready' && !seenDumps.has(r.id)).length; $('#dbadge').hidden = !n; $('#dbadge').textContent = n; }
+function drawDumpList() {
+  $('#dcount').textContent = dumpsRows.length;
+  const busy = dumpsRows.filter(r => BUSY.includes(r.status)).length;
+  $('#dmeta').textContent = busy ? `· ${busy} processing` : '';
+  $('#dumplist').innerHTML = dumpsRows.map(r => `<div class="dl ${statusCls(r.status)}${r.id === dumpSel ? ' on' : ''}${r.status === 'ready' && !seenDumps.has(r.id) ? ' unseen' : ''}" data-id="${esc(r.id)}">
+      <span class="when">${esc(when(r.createdAt))}</span><span class="dur">${mmss(r.durationSec)}</span>
+      <span class="sum">${esc(r.summaryLine || r.error || r.label || statusText(r.status))}</span><span class="chip ${statusCls(r.status)}">${esc(statusText(r.status))}</span></div>`).join('')
+    || `<div class="none">No brain dumps yet. Press ${esc(DUMPKEY)} (or the Dump button above), talk for as long as you like, press it again: the transcript and its cards appear here.</div>`;
+}
+async function loadDumps(force) {
+  if (!force && Date.now() - dumpsAt < 2500) return;
+  dumpsAt = Date.now();
+  let rows, err = '';
+  try { const r = await fetch('/api/dumps'); rows = await r.json(); if (!r.ok) err = (rows && rows.error) || `dumps unavailable (HTTP ${r.status})`; }
+  catch { err = 'Dumps unavailable (server offline?).'; }
+  if (err) { if (tab === 'dumps') $('#dumplist').innerHTML = `<div class="none">${esc(err)}</div>`; return; }
+  dumpsRows = Array.isArray(rows) ? rows : [];
+  drawBadge();
+  if (tab !== 'dumps') return;
+  drawDumpList();
+  if (dumpSel && !dumpsRows.some(r => r.id === dumpSel)) { dumpSel = null; dumpDetail = null; $('#dumpdetail').hidden = true; }
+  const row = dumpsRows.find(r => r.id === dumpSel);
+  if (row && (BUSY.includes(row.status) || !dumpDetail || dumpDetail.status !== row.status)) loadDetail(dumpSel);
+}
+async function selectDump(id) {
+  dumpSel = id; sendOpen = null; seenDumps.add(id); saveSeen(); drawBadge(); drawDumpList();
+  await loadDetail(id);
+  $('#dumpdetail').scrollIntoView({behavior: 'smooth', block: 'start'});
+}
+async function loadDetail(id) {
+  if (detailBusy) return; detailBusy = true;
+  try {
+    const r = await fetch('/api/dumps/' + encodeURIComponent(id));
+    if (!r.ok) throw new Error(r.status);
+    dumpDetail = await r.json(); drawDetail();
+  } catch { $('#dumpdetail').hidden = false; $('#dumpdetail').innerHTML = '<div class="none">Could not load this dump.</div>'; }
+  detailBusy = false;
+}
+function actCard(a, sentAt) {
+  const open = sendOpen === a.id;
+  return `<div class="act" data-aid="${esc(a.id)}"><div class="t">${esc(a.title || '')}${a.effort ? ` <span class="chip">${esc(a.effort)}</span>` : ''}</div>
+    ${a.deliverable ? `<div class="d">${esc(a.deliverable)}</div>` : ''}${a.why ? `<div class="w">${esc(a.why)}</div>` : ''}
+    ${open ? `<textarea id="sendbox" maxlength="4000">${esc(sendText)}</textarea><div class="row"><button class="b go" data-send="${esc(a.id)}">Send</button><button class="b" data-cancel="1">Cancel</button><span class="msg" id="sendmsg"></span></div>`
+           : `<div class="row"><button class="b" data-open="${esc(a.id)}" title="Edit the text first; what you send is typed into your session">Send to Claude</button>${sentAt ? `<span class="sent">sent ${esc(hhmm(sentAt))}</span>` : ''}</div>`}</div>`;
+}
+function drawDetail() {
+  const d = dumpDetail, el = $('#dumpdetail'); if (!d) return; el.hidden = false;
+  const box = $('#sendbox'); if (box && sendOpen) sendText = box.value;      // a redraw keeps what is being edited
+  const c = d.cards || {}, sent = d.sent || {}, onAg = d.todo_added || [];
+  let h = `<div class="meta"><b>${esc(when(d.createdAt))}</b><span>${mmss(d.durationSec)}</span>${d.words ? `<span>${esc(d.words)} words</span>` : ''}${c.project ? `<span>${esc(c.project)}</span>` : ''}` +
+          `<span class="chip ${statusCls(d.status)}">${esc(statusText(d.status))}</span>${d.report ? `<span title="${esc(d.report)}">report written</span>` : ''}</div>`;
+  if (d.status === 'error') h += `<div class="err">${esc(d.error || 'processing failed')}</div><div class="row"><button class="b" data-retry="1">Retry</button><span class="msg" id="retrymsg"></span></div>`;
+  else if (BUSY.includes(d.status)) h += `<div class="none"><span class="spin"></span> ${d.status === 'thinking' ? 'Making cards…' : d.status === 'transcribed' ? 'Queued for the card maker…' : 'Transcribing…'}</div>`;
+  if (d.warning) h += `<div class="none">Note: ${esc(d.warning)}</div>`;
+  if (c.executiveSummary) h += `<h3>Summary</h3><div class="sumtext">${esc(c.executiveSummary)}</div>`;
+  if ((c.talkingPoints || []).length) h += '<h3>Themes</h3>' + c.talkingPoints.map(t => `<div class="theme">${esc(t.theme || '')}</div><ul>${(t.bullets || []).map(b => `<li>${esc(b)}</li>`).join('')}</ul>`).join('');
+  if ((c.actions || []).length) h += '<h3>Proposed actions</h3>' + c.actions.map(a => actCard(a, sent[a.id])).join('');
+  if ((c.todos || []).length) h += '<h3>To-dos</h3>' + c.todos.map((t, i) => `<div class="todo"><span>${esc(t)}</span>${onAg[i] ? '<span class="ok">on your agenda ✓</span>' : `<button class="b" data-todo="${i}">Add to agenda</button>`}</div>`).join('');
+  if ((d.questions || []).length) h += '<h3>Questions</h3>' + d.questions.map(q => qCard({...q, source: 'dump', kind: 'think'}, false)).join('');
+  if (d.transcript) h += `<details><summary>Transcript</summary><pre>${esc(d.transcript)}</pre></details>`;
+  el.innerHTML = h;
+  drawArmed(armed);
+}
+$('#dumplist').addEventListener('click', e => { const r = e.target.closest('.dl[data-id]'); if (r) selectDump(r.dataset.id); });
+$('#dumpdetail').addEventListener('click', async e => {
+  const d = dumpDetail; if (!d) return;
+  const b = e.target.closest('button'); if (!b) return qClick(e);
+  if (b.dataset.open) { const a = (d.cards?.actions || []).find(x => x.id === b.dataset.open) || {}; sendOpen = a.id; sendText = `${a.title || ''}: ${a.deliverable || ''}`.replace(/^: /, ''); drawDetail(); $('#sendbox')?.focus(); return; }
+  if (b.dataset.cancel) { sendOpen = null; drawDetail(); return; }
+  if (b.dataset.send) {
+    const text = ($('#sendbox')?.value || '').trim(), m = $('#sendmsg'); if (!text) return;
+    b.disabled = true; m.textContent = 'sending…'; m.className = 'msg';
+    try { const r = await (await postJSON(`/api/dumps/${encodeURIComponent(d.id)}/send`, {action_id: b.dataset.send, text})).json();
+          if (r.ok) { d.sent = {...(d.sent || {}), [b.dataset.send]: r.sent}; sendOpen = null; drawDetail(); }
+          else { m.textContent = r.error || 'not sent'; m.className = 'msg err'; b.disabled = false; } }
+    catch { m.textContent = 'panel server did not answer'; m.className = 'msg err'; b.disabled = false; }
+    return;
+  }
+  if (b.dataset.todo) {   // by index: the server takes the to-do's words from the dump (the page may only have '(private)')
+    const i = Number(b.dataset.todo), text = (d.cards?.todos || [])[i] || '';
+    b.disabled = true; b.textContent = 'adding…';
+    try { const r = await (await postJSON(`/api/dumps/${encodeURIComponent(d.id)}/agenda`, {text, index: i})).json();
+          if (r.ok) { d.todo_added = Object.assign([], d.todo_added || [], {[i]: true}); drawDetail(); loadAgenda(); } else { b.textContent = r.error || 'failed'; } }
+    catch { b.textContent = 'no answer'; }
+    return;
+  }
+  if (b.dataset.retry) {
+    b.disabled = true; const m = $('#retrymsg'); m.textContent = 'queued again…';
+    try { const r = await (await postJSON(`/api/dumps/${encodeURIComponent(d.id)}/retry`, {})).json(); m.textContent = r.ok ? 'retrying' : (r.error || 'could not retry'); }
+    catch { m.textContent = 'panel server did not answer'; }
+    setTimeout(() => loadDumps(true), 800);
+    return;
+  }
+  qClick(e);   // a question's option button
+});
+$('#dumpdetail').addEventListener('keydown', qKey);
+$('#openreports').addEventListener('click', async () => {
+  const b = $('#openreports'), t = b.textContent;
+  try { const r = await (await postJSON('/api/open-folder', {what: 'reports'})).json(); b.textContent = r.ok ? (r.sandbox ? 'recorded (sandbox)' : 'opened') : (r.error || 'failed'); }
+  catch { b.textContent = 'no answer'; }
+  setTimeout(() => { b.textContent = t; }, 2500);
+});
+
+// ---- Reports tab: every brain-dump report, plus the Markdown reports config.json's `reports` settings add; newest first,
+// with a dot until opened. The server renders a report (escaped: no HTML from the file reaches this page) and serves only
+// files it listed itself, by id. Opening one here marks it read. Save as PDF is the browser's own print dialog, with the
+// print stylesheet above. ----
+let repRows = [], repWarn = [], repSel = null, repDoc = null, repAt = 0;
+function docTheme() {
+  let t = null; try { t = localStorage.getItem('briandumpDocTheme'); } catch {}
+  return t === 'light' || t === 'dark' ? t : (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+}
+function applyDocTheme() {
+  const dark = docTheme() === 'dark';
+  $('#repdoc').classList.toggle('dark', dark);
+  $('#reptheme').textContent = dark ? '☀ Light' : '☾ Dark';
+}
+function drawRepBadge() { const n = repRows.filter(r => r.unread).length; $('#rbadge').hidden = !n; $('#rbadge').textContent = n; }
+function drawRepList() {
+  const n = repRows.filter(r => r.unread).length;
+  $('#rcount').textContent = repRows.length;
+  $('#rmeta').textContent = n ? `· ${n} unread` : '';
+  $('#rreadall').hidden = !n;
+  $('#rnote').hidden = !repWarn.length;
+  $('#rnote').innerHTML = repWarn.map(esc).join('<br>');
+  $('#replist').innerHTML = repRows.map(r => `<div class="rl${r.unread ? ' unread' : ''}${r.id === repSel ? ' on' : ''}" data-id="${esc(r.id)}" title="${esc(r.path)}">
+      <span class="rdot" title="${r.unread ? 'not opened yet' : 'opened ' + esc(when(r.opened_at))}"></span>
+      <div class="rt"><div class="rtitle">${esc(r.title)}</div><div class="rsub">${[r.date, r.by, r.where].filter(Boolean).map(esc).join(' · ')}${r.viewable ? '' : ` <span class="chip">${esc(r.ext)}</span>`}</div></div></div>`).join('')
+    || '<div class="none">No reports yet. Each brain dump writes one. To list your other Markdown reports too, such as the ones you ask Claude to write, set <code>reports</code> in config.json: an index file, the folders they live in, or a byline to look for.</div>';
+}
+async function loadReports(force, refresh) {
+  if (!force && Date.now() - repAt < 20000) return;
+  repAt = Date.now();
+  let d = null, err = '';
+  try { const r = await fetch('/api/reports' + (refresh ? '?refresh=1' : '')); d = await r.json(); if (!r.ok) err = d.error || `reports unavailable (HTTP ${r.status})`; }
+  catch { err = 'Reports unavailable (server offline?).'; }
+  if (err) { if (tab === 'reports' && !repDoc) $('#replist').innerHTML = `<div class="none">${esc(err)}</div>`; return; }
+  repRows = d.items || []; repWarn = d.warnings || [];
+  drawRepBadge();
+  if (tab === 'reports' && !repDoc) drawRepList();
+}
+function showDoc(on) {
+  $('#replistwrap').hidden = on; $('#repview').hidden = !on;
+  if (!on) { repDoc = null; drawRepList(); }
+  document.documentElement.classList.toggle('printdoc', on);       // the print stylesheet prints the open report alone
+  $('#reportsview').scrollTop = 0;
+}
+async function openReport(id) {
+  repSel = id;
+  let d;
+  try { const r = await fetch('/api/reports/' + encodeURIComponent(id)); d = await r.json(); if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`); }
+  catch (e) { repDoc = {id}; $('#repdoc').innerHTML = `<p>Could not open this report (${esc(e.message || e)}).</p>`; $('#reppdf').hidden = true; showDoc(true); return; }
+  repDoc = d;
+  $('#repdoc').innerHTML = d.html || `<h1>${esc(d.title)}</h1><div class="byline">${[d.date, d.by, d.path].filter(Boolean).map(esc).join(' · ')}</div><p>${esc(d.note || '')}</p>`;
+  $('#reppdf').hidden = !d.html;
+  $('#repmsg').textContent = '';
+  showDoc(true);
+  if (d.html && d.unread) markRead(id);
+}
+function markRead(id) {
+  const row = repRows.find(r => r.id === id);
+  if (row) { row.unread = false; row.opened_at = new Date().toISOString(); drawRepBadge(); }
+  postJSON(`/api/reports/${encodeURIComponent(id)}/read`, {}).catch(() => {});
+}
+$('#replist').addEventListener('click', e => { const r = e.target.closest('.rl[data-id]'); if (r) openReport(r.dataset.id); });
+$('#repback').addEventListener('click', () => showDoc(false));
+$('#reptheme').addEventListener('click', () => {
+  try { localStorage.setItem('briandumpDocTheme', docTheme() === 'dark' ? 'light' : 'dark'); } catch {}
+  applyDocTheme();
+});
+$('#reppdf').addEventListener('click', () => {      // the browser's print dialog: pick "Save as PDF"; the title names the file
+  const t = document.title;
+  document.title = (repDoc && repDoc.title) || t;
+  try { window.print(); } finally { document.title = t; }
+});
+$('#repopen').addEventListener('click', async () => {
+  if (!repDoc) return;
+  const m = $('#repmsg');
+  try {
+    const r = await (await postJSON(`/api/reports/${encodeURIComponent(repDoc.id)}/open`, {})).json();
+    m.textContent = r.msg || r.error || ''; m.className = 'msg ' + (r.ok ? 'ok' : 'err');
+    const row = r.ok && repRows.find(x => x.id === repDoc.id);
+    if (row) { row.unread = false; drawRepBadge(); }
+  } catch { m.textContent = 'panel server did not answer'; m.className = 'msg err'; }
+});
+$('#rreadall').addEventListener('click', async () => { try { await postJSON('/api/reports/all/read', {}); } catch {} loadReports(true); });
+$('#rrefresh').addEventListener('click', () => loadReports(true, true));
+$('#repdoc').addEventListener('click', e => {        // another listed report opens here; #anchors scroll; http(s) goes out
+  const a = e.target.closest('a'); if (!a) return;
+  if (a.dataset.report) { e.preventDefault(); openReport(a.dataset.report); return; }
+  const h = a.getAttribute('href') || '';
+  if (h.startsWith('#')) { e.preventDefault(); if (h.length > 1) document.getElementById(h.slice(1))?.scrollIntoView({block: 'start'}); }
+});
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && tab === 'reports' && repDoc && !e.target.closest('input, textarea')) showDoc(false);
+});
+applyDocTheme();
+
+// ---- Voice tab: the router's target + the queued / delivered lines it typed into a session ----
+const VGLYPH = {queued: '◴', typing: '⌨', delivered: '✓', failed: '✕', dropped: '·', stale: '⚠'};
+let vmsg = {text: '', cls: ''};   // the last reply to a click on this tab (Open Main, drop, retry): every render keeps it until the next click
+const openMainBtn = () => LOCAL ? `<button class="openmain" data-vm="open_main" title="Open a new terminal tab running claude --name ${esc(MAIN)}">Open ${esc(MAIN)}</button><span class="msg ${vmsg.cls}" id="vmsg">${esc(vmsg.text)}</span>` : '';
+function renderVoice(v) {
+  const el = $('#voicestrip');
+  if (v && v.error) {               // panel mode, but no router: say why, and keep Open Main (it does not need the router)
+    $('#vsum').textContent = '· router off';
+    el.innerHTML = `<div class="vh"><span class="off">${esc(v.error)}</span>${openMainBtn()}</div>`;
+    return;
+  }
+  if (!v || v.mode !== 'panel') {   // monitor mode: each session picks up the inbox itself; the router is off
+    $('#vsum').textContent = '· monitor mode';
+    el.innerHTML = `<div class="none">This machine is in <b>monitor</b> mode: each Claude Code session picks up your ${esc(KEY)} lines itself (the BrianDump SessionStart hook arms it). ` +
+      'Set <code>"voice": {"mode": "panel"}</code> in config.json and restart the panel to route them from here.</div>';
+    return;
+  }
+  const n = {}; (v.items || []).forEach(i => { n[i.status] = (n[i.status] || 0) + 1; });
+  $('#vsum').textContent = `· panel mode · ${n.delivered || 0} delivered · ${v.queued || 0} queued${n.stale ? ' · ' + n.stale + ' waiting for your OK' : ''}${n.failed ? ' · ' + n.failed + ' failed' : ''}`;
+  const tgt = v.main ? `${esc(v.main.name || MAIN)} (${esc(v.main.status || '')})` : v.fallback ? esc(v.fallback) + ` (no ${esc(MAIN)})` : '<span class="off">no session</span>';
+  const head = `<div class="vh"><span>${esc(KEY)} → <span class="target">${tgt}</span></span>${v.queued ? `<span>${esc(v.queued)} queued</span>` : ''}` +
+    `${v.grace ? '<span>settling…</span>' : ''}${v.lock ? `<span title="session holding the router lock">lock: ${esc(String(v.lock).slice(0, 8))}</span>` : ''}` +
+    openMainBtn() + '</div>';
+  const rows = (v.items || []).map(i => {
+    const meta = i.status === 'delivered' ? (i.confirmed ? 'delivered ' : 'typed ') + ago(i.delivered_at) : i.status === 'queued' ? 'queued ' + ago(i.queued_at)
+      : i.status === 'stale' ? 'not sent' : i.status;
+    const btn = i.status === 'queued' ? `<button data-vd="${esc(i.id)}">drop</button>`
+      : i.status === 'stale' ? `<button class="go" data-vr="${esc(i.id)}">Send anyway</button><button data-vd="${esc(i.id)}">Drop</button>`
+      : (i.status === 'failed' || i.status === 'dropped') ? `<button data-vr="${esc(i.id)}">retry</button>` : '';
+    return `<div class="vrow ${esc(i.status)}"><span class="vg">${VGLYPH[i.status] || '·'}</span><span class="vtx" title="${esc(i.text)}${i.target ? ' → ' + esc(i.target) : ''}">${esc(i.text)}</span>` +
+      `<span class="vmeta">${esc(meta)}${i.target ? ' · ' + esc(i.target) : ''}${i.note ? ' · ' + esc(i.note) : ''}</span>${btn}</div>`;
+  }).join('');
+  el.innerHTML = head + (rows || `<div class="none">No ${esc(KEY)} lines yet. Hold ${esc(KEY)}, say something, let go.</div>`);
+}
+async function loadVoice() {
+  try { const r = await fetch('/api/voice'), v = await r.json(); renderVoice(r.ok ? v : {error: v.error || `voice unavailable (HTTP ${r.status})`}); }
+  catch { if (tab === 'voice') $('#voicestrip').innerHTML = '<div class="none">Voice unavailable (server offline).</div>'; }
+}
+$('#voicestrip').addEventListener('click', async e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const body = vAction(b);
+  if (!body) return;
+  b.disabled = true;
+  vmsg = {text: '', cls: ''};
+  try { const r = await (await postJSON('/api/voice', body)).json(); if (r.msg) vmsg = {text: r.msg, cls: r.ok ? 'ok' : 'err'}; } catch {}
+  const m = $('#vmsg'); if (m) { m.textContent = vmsg.text; m.className = 'msg ' + vmsg.cls; }
+  setTimeout(loadVoice, 800);
+});
+// the router's actions on one line (POST /api/voice): drop, retry (Send anyway on a stale line is a retry), open_main. Never text.
+const vAction = b => b.dataset.vm ? {action: b.dataset.vm} : b.dataset.vd ? {action: 'drop', id: b.dataset.vd} : b.dataset.vr ? {action: 'retry', id: b.dataset.vr} : null;
+function renderVoiceMini(v) {   // Panel tab: one calm line so you see where your words are going without leaving your work
+  const el = $('#voicemini');
+  const vq = v ? (v.queued || 0) + (v.stale || 0) : 0;   // Voice tab button: dot = router on / last line's fate, badge = lines not in yet
+  $('#vdot').className = 'vdot ' + (!v || v.mode !== 'panel' ? '' : v.error ? 'failed' : vq ? 'queued' : v.last && v.last.status === 'failed' ? 'failed' : 'on');
+  $('#vbadge').hidden = !vq; $('#vbadge').textContent = vq;
+  if (!v) { el.hidden = true; return; }
+  if (v.error || v.mode !== 'panel') el._html = '';                // these write the line directly: the cache below no longer holds
+  if (v.error) {
+    el.hidden = false; el.className = 'failed';
+    el.innerHTML = `<span class="vg">${VGLYPH.failed}</span><span class="t" title="${esc(v.error)}">${esc(KEY)} lines are not being typed: ${esc(v.error)}${vq ? ` · ${vq} waiting` : ''}</span>`;
+    return;
+  }
+  if (v.mode !== 'panel') {
+    el.hidden = !vq;
+    if (vq) { el.className = 'queued'; el.innerHTML = `<span class="vg">${VGLYPH.queued}</span><span class="t">${esc(KEY)} · ${vq} line${vq > 1 ? 's' : ''} waiting for the session to pick ${vq > 1 ? 'them' : 'it'} up</span>`; }
+    return;
+  }
+  const last = v.last, stale = (v.stale_items || [])[0], nq = v.queued || 0;
+  if (!last && !vq) { el.hidden = true; return; }
+  el.hidden = false;
+  const st = stale ? 'stale' : nq ? 'queued' : (last ? last.status : '');
+  el.className = st;
+  let html;
+  if (stale) {   // waited past voice.stale_s: the router will not type it on its own, so the choice sits right here
+    const more = v.stale > 1 ? ` (+${v.stale - 1} more on the Voice tab)` : '';
+    html = `<span class="vg">${VGLYPH.stale}</span><span class="t" title="${esc(stale.note || '')}">${esc(KEY)} not sent, waited too long${more}: ${esc(stale.text || '')}</span>` +
+      `<button class="go" data-vr="${esc(stale.id)}">Send anyway</button><button data-vd="${esc(stale.id)}">Drop</button>`;
+  } else {
+    const txt = nq ? `${nq} line${nq > 1 ? 's' : ''} waiting${v.why ? ': ' + esc(v.why) : ' for ' + esc(v.target || 'a session')}`
+      : last ? `${last.status === 'delivered' ? 'sent to' : esc(last.status)} ${esc(last.target || v.target || '')}: ${esc(last.text || '')}` : '';
+    html = `<span class="vg">${VGLYPH[st] || '🎙'}</span><span class="t" title="${txt}">${esc(KEY)} ${txt}</span>`;
+  }
+  if (el._html !== html) { el._html = html; el.innerHTML = html; }   // unchanged -> untouched, so a button is never swapped mid-click
+}
+$('#voicemini').addEventListener('click', async e => {
+  const b = e.target.closest('button'), body = b && vAction(b);
+  if (!body) return;
+  b.disabled = true;
+  try { await postJSON('/api/voice', body); } catch {}
+  $('#voicemini')._html = '';                                      // redraw even if nothing changed (a failed click re-enables)
+  poll();
+});
+// The voice signal: the router numbers each line's fate (delivered | queued + why | stale | failed); play the ones this page
+// has not seen: one toast (the newest) and one short sound. Nothing on page load; a router restart (new boot) starts over.
+let vSeen = null;
+function voiceSignals(v) {
+  if (!v || v.mode !== 'panel' || v.seq === undefined) return;
+  const evs = v.events || [], fresh = !vSeen ? [] : vSeen.boot === v.boot ? evs.filter(e => e.seq > vSeen.seq) : evs;
+  vSeen = {boot: v.boot, seq: v.seq};
+  if (!fresh.length) return;
+  const e = fresh[fresh.length - 1], ok = e.kind === 'delivered';
+  const who = e.item_kind === 'panel' ? 'Answer' : KEY;
+  const head = {delivered: `✓ ${who} delivered${e.target ? ' to ' + e.target : ''}`, queued: `◴ ${who} queued${e.target ? ' for ' + e.target : ''}`,
+                stale: `⚠ ${who} not sent: waited too long`, failed: `✕ ${who} not sent`}[e.kind] || `${who} ${e.kind}`;
+  const t = $('#vtoast');
+  t.className = ok ? '' : e.kind === 'queued' ? 'wait' : 'bad';
+  t.innerHTML = `<div class="tt"><b>${esc(head)}</b>${e.text ? `<span>&nbsp;· ${esc(e.text)}</span>` : ''}</div>` + (e.reason ? `<div class="tr">${esc(e.reason)}</div>` : '');
+  t.hidden = false;
+  clearTimeout(voiceSignals.timer);
+  voiceSignals.timer = setTimeout(() => { t.hidden = true; }, ok ? 3500 : 7000);
+  if (LOCAL && CHIME) vbeep(ok);   // the sound only on this PC's own panel, and only when the chime is on
+}
+
+poll(); setInterval(poll, 1000); setInterval(tick, 1000); setInterval(armTick, 250);
+loadAgenda(); setInterval(loadAgenda, 30000); setInterval(drawAgenda, 1000);
+setInterval(() => { if (tab === 'dumps') loadDumps(true); }, 3000);   // closed tab: /api/state's dumps counts trigger a reload
+loadReports(true); setInterval(() => loadReports(true), 60000);       // the Reports badge counts unread reports
+setInterval(() => { if (tab === 'voice') loadVoice(); }, 3000);
+</script>
+</body>
+</html>

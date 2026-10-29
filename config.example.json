@@ -1,0 +1,117 @@
+{
+  "_comment": "BrianDump settings. On first run this file is copied to %LOCALAPPDATA%\\BrianDump\\config.json (py briandump.py config opens it). Edit that copy, then restart the panel and the hold-to-talk service. null means 'use the default described here'.",
+
+  "data_dir": null,
+  "_data_dir": "Where your words end up: agenda.md, questions.md, reports/ and dumps/ (audio + transcript + cards per brain dump). null = the Documents folder inside your user folder (%USERPROFILE%\\Documents\\BrianDump), which stays on this PC even when Windows backs up the Documents folder Explorer shows to the cloud.",
+
+  "port": 8770,
+  "_port": "The panel's local port. If another program already answers on it, the panel says so and does not start: pick another with `py briandump.py config --set port 8771`.",
+  "bind": "127.0.0.1",
+  "_bind": "The address the server listens on. 127.0.0.1 = this PC only: keep it. Opening the panel from another PC takes a different bind AND that PC's address in allow (read SECURITY.md first).",
+  "allow": [],
+  "_allow": "Extra client IP addresses that may open the panel (for example another PC of yours). Loopback is always allowed. Anyone who can reach the page can type into your Claude session, so keep this empty unless you need it.",
+
+  "context_limit": 200000,
+  "_context_limit": "Tokens the context meter counts up to (200k for most plans, 1000000 if your account has the 1M window).",
+
+  "window": "edge",
+  "_window": "edge = an Edge app window (default, nothing to install) | webview = frameless WebView2 window (pip install pywebview pythonnet) | none = serve only, open http://127.0.0.1:8770 yourself.",
+  "scale": 1.0,
+  "_scale": "Text size on the panel (1.0 = normal, 1.25 = a quarter bigger).",
+  "fraction": 0.333,
+  "_fraction": "The panel's share of the monitor's width (0.333 = the right third).",
+  "monitor": "auto",
+  "_monitor": "auto = the monitor of the terminal you launched from | primary | side (the biggest non-primary monitor).",
+  "title_bar": null,
+  "_title_bar": "null = the Edge title bar sits just above the screen and the panel draws its own slim bar with window buttons | native = keep the normal title bar (the panel's own buttons are hidden).",
+
+  "voice": {
+    "mode": "panel",
+    "_mode": "panel = the panel server types your F9 words into your Claude Code session (the session named main_session, else the most recently active one) | monitor = each Claude session watches the inbox itself with a background command (the SessionStart hook tells it how).",
+    "main_session": "Main",
+    "_main_session": "Name of the session your voice goes to: start it with `claude --name Main` (or use the panel's Open Main button).",
+    "auto_open_main": true,
+    "_auto_open_main": "true = when the panel server starts and no session named main_session is running, it opens one for you in a new Windows Terminal tab, once per sign-in: close it and it stays closed until you next sign in. false = start it yourself (claude --name Main, or Open Main).",
+    "input_idle_s": 2.0,
+    "_input_idle_s": "Seconds without keyboard or mouse input before a line is typed, so it never mixes with your own typing.",
+    "max_chars": 4000,
+    "_max_chars": "The longest line that is typed into a session. A longer panel answer is refused.",
+    "busy_typing": true,
+    "_busy_typing": "true = a line is typed even while the session is working: Claude Code queues it and reads it after the current step. It still waits while the session asks you something (a permission prompt, a question). false = type only into an idle session.",
+    "stale_s": 120,
+    "_stale_s": "Seconds a line may wait after you said it. An older line is not typed on its own: the panel shows it with Send anyway and Drop. 0 = no limit."
+  },
+
+  "ptt": {
+    "key": "f9",
+    "_key": "Hold this key to talk to the live session. pynput key names: f9, f8, scroll_lock, pause ... Laptops may need F8 or scroll_lock (Fn-lock).",
+    "dump_key": "f2",
+    "_dump_key": "Press once to start a brain dump, press again to stop. Pressing F2 is a toggle, not a hold.",
+    "device": null,
+    "_device": "Part of the microphone's name (py briandump.py mics lists them). null = the Windows default microphone.",
+    "model": "small",
+    "_model": "faster-whisper model: tiny (fastest, ~75 MB) | base | small (default, ~460 MB, accurate). The English-only base.en / small.en also work.",
+    "language": "en",
+    "_language": "The language you speak: en (default), another code such as de or fr, or auto to let Whisper detect it. The .en models know only English.",
+    "hotwords": ["Claude", "Claude Code"],
+    "_hotwords": "Spelling hints for Whisper (names it tends to mishear). Add your project names.",
+    "keep_last_clip": false,
+    "_keep_last_clip": "true = keep last_clip.wav of your most recent F9 clip in the state folder, to check mic levels by ear.",
+    "beeps": true,
+    "_beeps": "Beeps on press and release, when a line is written, and when a dump starts and stops. false = silent.",
+    "suppress_key": true,
+    "_suppress_key": "true = other apps never see the talk key or the dump key while BrianDump runs (a held F9 would otherwise scroll your terminal). false = pass them through too."
+  },
+
+  "dump": {
+    "processor": "claude",
+    "_processor": "claude = one `claude -p` call per dump under your own Claude Code login (about one Claude message of usage) | mock = canned cards, no model call (for trying the panel).",
+    "model": null,
+    "_model": "null = the Claude Code default model; or sonnet / opus / haiku.",
+    "effort": null,
+    "_effort": "null = the Claude Code default effort; or low / medium / high / xhigh / max (passed to claude -p as --effort).",
+    "claude_cmd": "claude",
+    "_claude_cmd": "The command that starts Claude Code, if `claude` alone is not found (a full path to claude.exe works).",
+    "timeout_s": 360,
+    "_timeout_s": "Seconds the cards call may take before it is stopped (the dump then shows an error and a Retry button).",
+    "max_minutes": 30,
+    "_max_minutes": "A dump recording stops itself after this many minutes.",
+    "delete_audio_after_days": null,
+    "_delete_audio_after_days": "null = keep every recording. A number = delete dumps/<id>/audio.wav once the dump is older than that many days (transcript and cards stay).",
+    "prompt_file": null,
+    "_prompt_file": "Path to a text file that replaces the built-in system prompt for the cards step.",
+    "user_name": null,
+    "_user_name": "Your name, used in the cards prompt ('X records themself thinking out loud'). null = 'the user'."
+  },
+
+  "agenda": {
+    "file": null,
+    "_file": "A markdown checklist (- [ ] item). null = <data_dir>\\agenda.md. Dump to-dos are added here (deduplicated); ticking in the panel edits the file.",
+    "heading": null,
+    "_heading": "Only read items under this '## heading' (null = the whole file). Lets you point agenda.file at a bigger notes file."
+  },
+
+  "questions": {
+    "file": null,
+    "_file": "A markdown checklist of open questions for you. null = <data_dir>\\questions.md. Dump questions are added here (deduplicated); answering one in the panel ticks it."
+  },
+
+  "reports": {
+    "_comment": "The Reports tab always lists the report of each brain dump. These three settings add your other Markdown reports, such as the ones you ask Claude to write. The panel only ever opens a file inside roots or your data folder.",
+    "index": null,
+    "_index": "A JSON file, or a list of them, naming reports: [{\"path\": \"garden/docs/plan.md\", \"title\": \"Shed plan\", \"date\": \"2026-10-19\", \"by\": \"Main\"}]. Only path is needed, and a plain string works too. A relative path is looked up in each of roots in turn; ~ and %VARIABLES% work.",
+    "roots": [],
+    "_roots": "The folders your reports live in, for example [\"~/Projects\"]. index paths are looked up here, discover searches here, and nothing outside them (or your data folder) is ever opened.",
+    "discover": null,
+    "_discover": "A regular expression. Markdown files under roots whose first 20 lines match it are listed too: \"^Prepared for \" lists every report that starts with that byline. null = no search."
+  },
+
+  "private_filter": [],
+  "_private_filter": "Regular expressions; an agenda item, question or answer option, dump card line, step, status line, project name, voice line or report title that matches is shown as '(private)' on the panel (your files are never changed). A report whose title, author or path matches is listed as '(private)' and its text stays off the panel; in other reports a matching paragraph, list item, table cell or code line is masked. Empty = show everything.",
+
+  "needs_you_chime": true,
+  "_needs_you_chime": "A two-note chime when Claude needs you. false = the red strip only.",
+
+  "install_dir": null,
+  "_install_dir": "Written by the installer: the folder that holds briandump.py. The plugin's /briandump:ask and /briandump:agenda commands use it to find the CLI."
+}

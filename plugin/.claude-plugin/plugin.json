@@ -1,0 +1,11 @@
+{
+  "name": "briandump",
+  "version": "0.1.1",
+  "description": "Voice and panel glue for BrianDump: a SessionStart hook that tells the session how your push-to-talk lines arrive, a Notification hook that lights the panel's needs-you banner, and /briandump:ask + /briandump:agenda.",
+  "author": {
+    "name": "Brian Mahoney"
+  },
+  "repository": "https://github.com/KnockKnockGoose/BrianDump",
+  "license": "MIT",
+  "keywords": ["voice", "push-to-talk", "panel", "windows", "whisper"]
+}

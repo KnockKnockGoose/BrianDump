@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900" font-family="Segoe UI, Arial, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#334155"/>
+    </marker>
+    <marker id="g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#b45309"/>
+    </marker>
+    <style>
+      .t  { font-size: 19px; fill: #0f172a; text-anchor: middle; }
+      .ts { font-size: 15px; fill: #475569; text-anchor: middle; }
+      .lane { font-size: 22px; font-weight: 700; letter-spacing: .5px; }
+      .ln { stroke: #334155; stroke-width: 2.5; fill: none; marker-end: url(#a); }
+      .lg { stroke: #b45309; stroke-width: 3; fill: none; marker-end: url(#g); stroke-dasharray: 9 6; }
+      .lbl { font-size: 15px; fill: #334155; font-style: italic; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="900" fill="#ffffff"/>
+  <text x="800" y="48" text-anchor="middle" font-size="32" font-weight="700" fill="#0f172a">Talking to your AI: two speeds</text>
+
+  <!-- ===== Lane 1: brain dump ===== -->
+  <rect x="20" y="80" width="1560" height="420" rx="18" fill="#eff6ff" stroke="#93c5fd" stroke-width="2"/>
+  <text x="44" y="116" class="lane" fill="#1d4ed8">BRAIN DUMP (F2): think out loud, all at once</text>
+
+  <rect x="40" y="180" width="180" height="96" rx="12" fill="#fff" stroke="#3b82f6" stroke-width="2.5"/>
+  <text x="130" y="221" class="t">Talk 3–20 min</text>
+  <text x="130" y="247" class="ts">press F2 to start / stop</text>
+
+  <rect x="260" y="180" width="180" height="96" rx="12" fill="#fff" stroke="#3b82f6" stroke-width="2.5"/>
+  <text x="350" y="221" class="t">Whisper</text>
+  <text x="350" y="247" class="ts">transcribes on your PC</text>
+
+  <rect x="480" y="180" width="190" height="96" rx="12" fill="#fff" stroke="#3b82f6" stroke-width="2.5"/>
+  <text x="575" y="221" class="t">Claude organizes</text>
+  <text x="575" y="247" class="ts">one claude -p call</text>
+
+  <!-- outputs -->
+  <rect x="712" y="150" width="170" height="46" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
+  <text x="797" y="180" class="t">Reports</text>
+  <rect x="712" y="206" width="170" height="46" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
+  <text x="797" y="236" class="t">Questions</text>
+  <rect x="712" y="262" width="170" height="46" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="2"/>
+  <text x="797" y="292" class="t">Agenda / to-dos</text>
+
+  <!-- YOU READ: the human step -->
+  <rect x="930" y="165" width="210" height="126" rx="14" fill="#fef3c7" stroke="#d97706" stroke-width="4"/>
+  <text x="1035" y="210" text-anchor="middle" font-size="23" font-weight="700" fill="#92400e">YOU READ</text>
+  <text x="1035" y="238" class="t">the reports</text>
+  <text x="1035" y="266" class="ts">the step that makes it useful</text>
+
+  <!-- decision -->
+  <polygon points="1290,170 1370,228 1290,286 1210,228" fill="#fff" stroke="#334155" stroke-width="2.5"/>
+  <text x="1290" y="222" class="ts" font-weight="600" fill="#0f172a">Research or</text>
+  <text x="1290" y="242" class="ts" font-weight="600" fill="#0f172a">build?</text>
+
+  <!-- build branch -->
+  <rect x="1410" y="130" width="155" height="84" rx="12" fill="#fff" stroke="#3b82f6" stroke-width="2.5"/>
+  <text x="1487" y="165" class="t">"Go build it"</text>
+  <text x="1487" y="191" class="ts">agents build</text>
+  <rect x="1410" y="250" width="155" height="84" rx="12" fill="#fff" stroke="#3b82f6" stroke-width="2.5"/>
+  <text x="1487" y="285" class="t">QA agent</text>
+  <text x="1487" y="311" class="ts">checks the work</text>
+
+  <!-- lane 1 arrows -->
+  <path class="ln" d="M220,228 H256"/>
+  <path class="ln" d="M440,228 H476"/>
+  <path class="ln" d="M670,228 H708"/>
+  <path class="ln" d="M882,228 H926"/>
+  <path class="ln" d="M1140,228 H1206"/>
+  <path class="ln" d="M1370,228 C1390,228 1390,172 1406,172"/>
+  <text x="1338" y="166" class="lbl">build</text>
+  <path class="ln" d="M1487,214 V246"/>
+  <!-- QA report loops back to Reports -->
+  <path class="ln" d="M1487,334 V455 H690 V173 H708"/>
+  <text x="1100" y="478" class="lbl" text-anchor="middle">new report → read it too</text>
+
+  <!-- ===== Lane 2: F9 live ===== -->
+  <rect x="20" y="530" width="1560" height="300" rx="18" fill="#fff7ed" stroke="#fdba74" stroke-width="2"/>
+  <text x="44" y="566" class="lane" fill="#c2410c">F9 LIVE: talk while you work</text>
+
+  <rect x="40" y="630" width="180" height="96" rx="12" fill="#fff" stroke="#f97316" stroke-width="2.5"/>
+  <text x="130" y="671" class="t">Hold F9 &amp; talk</text>
+  <text x="130" y="697" class="ts">a few seconds</text>
+
+  <rect x="260" y="630" width="180" height="96" rx="12" fill="#fff" stroke="#f97316" stroke-width="2.5"/>
+  <text x="350" y="671" class="t">Whisper</text>
+  <text x="350" y="697" class="ts">1–3 s, on your PC</text>
+
+  <rect x="480" y="630" width="210" height="96" rx="12" fill="#fff" stroke="#f97316" stroke-width="2.5"/>
+  <text x="585" y="671" class="t">Typed into Claude</text>
+  <text x="585" y="697" class="ts">your live session (Main)</text>
+
+  <rect x="730" y="630" width="180" height="96" rx="12" fill="#fff" stroke="#f97316" stroke-width="2.5"/>
+  <text x="820" y="671" class="t">Claude acts</text>
+  <text x="820" y="697" class="ts">edits, runs, builds</text>
+
+  <rect x="950" y="630" width="200" height="96" rx="12" fill="#fff" stroke="#f97316" stroke-width="2.5"/>
+  <text x="1050" y="671" class="t">Answer in the CLI</text>
+  <text x="1050" y="697" class="ts">text you can scan</text>
+
+  <path class="ln" d="M220,678 H256"/>
+  <path class="ln" d="M440,678 H476"/>
+  <path class="ln" d="M690,678 H726"/>
+  <path class="ln" d="M910,678 H946"/>
+  <!-- loop back -->
+  <path class="ln" d="M1050,726 V790 H130 V730"/>
+  <text x="590" y="812" class="lbl" text-anchor="middle">next instruction (seconds, not minutes)</text>
+
+  <!-- ===== the bridge: research → you answer by F9 ===== -->
+  <path class="lg" d="M1290,286 V480 H1240 Q1220,480 1220,500 V600 Q1220,615 1205,615 H140 Q130,615 130,626"/>
+  <rect x="975" y="330" width="300" height="56" rx="8" fill="#fff" stroke="#b45309" stroke-width="1.5"/>
+  <text x="1125" y="353" text-anchor="middle" font-size="16" fill="#92400e" font-weight="600">research → answer the questions</text>
+  <text x="1125" y="375" text-anchor="middle" font-size="16" fill="#92400e" font-weight="600">and decide, by voice (F9)</text>
+
+  <text x="800" y="872" text-anchor="middle" font-size="20" fill="#334155" font-style="italic">Talking to AI is easy. Making it useful means reading what comes back, and answering it.</text>
+</svg>
